@@ -763,27 +763,48 @@ main figcaption {
 }
 
 
-/* ---------- Pie de página ---------- */
+/* ---------- Pie de página (como en el Jupyter Book) ---------- */
 
 footer.bg-primary {
 
-  background: var(--jb-bg) !important;
-
-  border-top: 1px solid var(--jb-border);
+  display: none !important;
 }
 
 
-footer.bg-primary,
-footer.bg-primary p,
-footer.bg-primary a {
+.tc-pie {
 
-  color: var(--jb-muted) !important;
+  margin: 2.5rem 0 1rem;
+
+  padding-top: 1rem;
+
+  border-top: 1px solid var(--jb-border);
+
+  color: var(--jb-muted);
+
+  font-size: 0.9rem;
+}
+
+
+.tc-pie p {
+
+  margin: 0.15rem 0;
+
+  color: var(--jb-muted);
 }
 
 
 main .chapter-nav {
 
   border-top: 1px solid var(--jb-border);
+}
+
+
+main .chapter-nav .prev,
+main .chapter-nav .next {
+
+  border-color: var(--jb-border) !important;
+
+  border-radius: 4px;
 }
 
 

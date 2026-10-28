@@ -1,10 +1,10 @@
-<div class="eda-table" id="eda-table-6"><span class="eda-table-title">Esquema analítico · train</span><input aria-label="Buscar en Esquema analítico · train" placeholder="Buscar en esta tabla…"><table class="dataframe">
+<div class="eda-table" id="eda-table-6"><span class="eda-table-title">Esquema anal&#xed;tico &#xb7; train</span><input aria-label="Buscar en Esquema anal&#xed;tico &#xb7; train" placeholder="Buscar en esta tabla&#x2026;"><table class="dataframe">
   <thead>
     <tr style="text-align: right;">
       <th>Variable</th>
       <th>Tipo almacenado</th>
       <th>Tipo EDA</th>
-      <th>Únicos observados</th>
+      <th>&#xda;nicos observados</th>
       <th>Nulos</th>
     </tr>
   </thead>
@@ -12,133 +12,133 @@
     <tr>
       <td>gender</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>2</td>
       <td>0</td>
     </tr>
     <tr>
       <td>SeniorCitizen</td>
       <td>int64</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>2</td>
       <td>0</td>
     </tr>
     <tr>
       <td>Partner</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>2</td>
       <td>0</td>
     </tr>
     <tr>
       <td>Dependents</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>2</td>
       <td>0</td>
     </tr>
     <tr>
       <td>tenure</td>
       <td>int64</td>
-      <td>Numérica</td>
+      <td>Num&#xe9;rica</td>
       <td>73</td>
       <td>0</td>
     </tr>
     <tr>
       <td>PhoneService</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>2</td>
       <td>0</td>
     </tr>
     <tr>
       <td>MultipleLines</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>3</td>
       <td>0</td>
     </tr>
     <tr>
       <td>InternetService</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>3</td>
       <td>0</td>
     </tr>
     <tr>
       <td>OnlineSecurity</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>3</td>
       <td>0</td>
     </tr>
     <tr>
       <td>OnlineBackup</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>3</td>
       <td>0</td>
     </tr>
     <tr>
       <td>DeviceProtection</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>3</td>
       <td>0</td>
     </tr>
     <tr>
       <td>TechSupport</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>3</td>
       <td>0</td>
     </tr>
     <tr>
       <td>StreamingTV</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>3</td>
       <td>0</td>
     </tr>
     <tr>
       <td>StreamingMovies</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>3</td>
       <td>0</td>
     </tr>
     <tr>
       <td>Contract</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>3</td>
       <td>0</td>
     </tr>
     <tr>
       <td>PaperlessBilling</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>2</td>
       <td>0</td>
     </tr>
     <tr>
       <td>PaymentMethod</td>
       <td>object</td>
-      <td>Categórica</td>
+      <td>Categ&#xf3;rica</td>
       <td>4</td>
       <td>0</td>
     </tr>
     <tr>
       <td>MonthlyCharges</td>
       <td>float64</td>
-      <td>Numérica</td>
+      <td>Num&#xe9;rica</td>
       <td>1489</td>
       <td>0</td>
     </tr>
     <tr>
       <td>TotalCharges</td>
       <td>float64</td>
-      <td>Numérica</td>
+      <td>Num&#xe9;rica</td>
       <td>5275</td>
       <td>8</td>
     </tr>
@@ -156,5 +156,5 @@
     root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
     const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
     const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
-    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    const c=(x!=='\u2014'&&y!=='\u2014'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
     rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

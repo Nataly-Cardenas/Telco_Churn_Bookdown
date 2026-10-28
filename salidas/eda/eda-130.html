@@ -1,9 +1,9 @@
-<div class="eda-table" id="eda-table-83"><span class="eda-table-title">Hallazgos y siguiente etapa</span><input aria-label="Buscar en Hallazgos y siguiente etapa" placeholder="Buscar en esta tabla…"><table class="dataframe">
+<div class="eda-table" id="eda-table-83"><span class="eda-table-title">Hallazgos y siguiente etapa</span><input aria-label="Buscar en Hallazgos y siguiente etapa" placeholder="Buscar en esta tabla&#x2026;"><table class="dataframe">
   <thead>
     <tr style="text-align: right;">
       <th>Aspecto</th>
       <th>Hallazgo en las salidas</th>
-      <th>Recomendación preliminar</th>
+      <th>Recomendaci&#xf3;n preliminar</th>
     </tr>
   </thead>
   <tbody>
@@ -14,47 +14,47 @@
     </tr>
     <tr>
       <td>Tipos</td>
-      <td>3 numéricas y 16 categóricas candidatas</td>
-      <td>Codificar y escalar para logística dentro de cada fold</td>
+      <td>3 num&#xe9;ricas y 16 categ&#xf3;ricas candidatas</td>
+      <td>Codificar y escalar para log&#xed;stica dentro de cada fold</td>
     </tr>
     <tr>
       <td>Churn</td>
       <td>No: 4139 (73.46%); Yes: 1495 (26.54%)</td>
-      <td>Métricas de clase positiva; comparar pesos en validación interna</td>
+      <td>M&#xe9;tricas de clase positiva; comparar pesos en validaci&#xf3;n interna</td>
     </tr>
     <tr>
       <td>Faltantes</td>
       <td>TotalCharges: 8 (0.14%)</td>
-      <td>Comparar imputación aprendida en train e indicador; no asumir cero</td>
+      <td>Comparar imputaci&#xf3;n aprendida en train e indicador; no asumir cero</td>
     </tr>
     <tr>
       <td>Outliers IQR</td>
       <td>tenure: 0; MonthlyCharges: 0; TotalCharges: 0</td>
-      <td>No eliminar por regla mecánica</td>
+      <td>No eliminar por regla mec&#xe1;nica</td>
     </tr>
     <tr>
-      <td>Asimetría</td>
-      <td>|g1| ≥ 0.5: TotalCharges</td>
-      <td>Comparar transformación solo en validación interna</td>
+      <td>Asimetr&#xed;a</td>
+      <td>|g1| &#x2265; 0.5: TotalCharges</td>
+      <td>Comparar transformaci&#xf3;n solo en validaci&#xf3;n interna</td>
     </tr>
     <tr>
-      <td>Asociación numérica</td>
+      <td>Asociaci&#xf3;n num&#xe9;rica</td>
       <td>Mayor |r|: tenure (0.3456)</td>
       <td>No seleccionar por p-value</td>
     </tr>
     <tr>
-      <td>Asociación categórica</td>
+      <td>Asociaci&#xf3;n categ&#xf3;rica</td>
       <td>Contract (V=0.4111), OnlineSecurity (V=0.3510), TechSupport (V=0.3449)</td>
       <td>Revisar utilidad incremental</td>
     </tr>
     <tr>
       <td>Correlaciones altas</td>
-      <td>tenure–TotalCharges (ρ=0.8914)</td>
-      <td>Revisar coeficientes y regularización</td>
+      <td>tenure&#x2013;TotalCharges (&#x3c1;=0.8914)</td>
+      <td>Revisar coeficientes y regularizaci&#xf3;n</td>
     </tr>
     <tr>
-      <td>Categorías raras</td>
-      <td>0 categorías bajo 1%</td>
+      <td>Categor&#xed;as raras</td>
+      <td>0 categor&#xed;as bajo 1%</td>
       <td>Agrupar solo si se justifica en train</td>
     </tr>
     <tr>
@@ -69,5 +69,5 @@
     root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
     const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
     const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
-    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    const c=(x!=='\u2014'&&y!=='\u2014'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
     rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

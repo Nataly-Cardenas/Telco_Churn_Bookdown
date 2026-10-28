@@ -1,11 +1,11 @@
-<div class="eda-table" id="eda-table-10"><span class="eda-table-title">Calidad y cardinalidad de categorías · train</span><input aria-label="Buscar en Calidad y cardinalidad de categorías · train" placeholder="Buscar en esta tabla…"><table class="dataframe">
+<div class="eda-table" id="eda-table-10"><span class="eda-table-title">Calidad y cardinalidad de categor&#xed;as &#xb7; train</span><input aria-label="Buscar en Calidad y cardinalidad de categor&#xed;as &#xb7; train" placeholder="Buscar en esta tabla&#x2026;"><table class="dataframe">
   <thead>
     <tr style="text-align: right;">
       <th>Variable</th>
-      <th>Categorías</th>
+      <th>Categor&#xed;as</th>
       <th>Nulos</th>
       <th>Nulos (%)</th>
-      <th>Categorías &lt;1%</th>
+      <th>Categor&#xed;as &lt;1%</th>
       <th>Valores con espacios externos</th>
       <th>Variantes potencialmente equivalentes</th>
     </tr>
@@ -162,5 +162,5 @@
     root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
     const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
     const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
-    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    const c=(x!=='\u2014'&&y!=='\u2014'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
     rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

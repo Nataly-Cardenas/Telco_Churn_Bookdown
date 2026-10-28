@@ -1,19 +1,19 @@
-<div class="eda-table" id="eda-table-9"><span class="eda-table-title">Estadísticas numéricas completas · train</span><input aria-label="Buscar en Estadísticas numéricas completas · train" placeholder="Buscar en esta tabla…"><table class="dataframe">
+<div class="eda-table" id="eda-table-9"><span class="eda-table-title">Estad&#xed;sticas num&#xe9;ricas completas &#xb7; train</span><input aria-label="Buscar en Estad&#xed;sticas num&#xe9;ricas completas &#xb7; train" placeholder="Buscar en esta tabla&#x2026;"><table class="dataframe">
   <thead>
     <tr style="text-align: right;">
       <th>Variable</th>
       <th>N</th>
       <th>Media</th>
       <th>DS</th>
-      <th>Mínimo</th>
+      <th>M&#xed;nimo</th>
       <th>Q1</th>
       <th>Mediana / Q2</th>
       <th>Q3</th>
-      <th>Máximo</th>
+      <th>M&#xe1;ximo</th>
       <th>IQR</th>
       <th>Nulos</th>
       <th>Nulos (%)</th>
-      <th>Asimetría</th>
+      <th>Asimetr&#xed;a</th>
     </tr>
   </thead>
   <tbody>
@@ -69,5 +69,5 @@
     root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
     const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
     const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
-    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    const c=(x!=='\u2014'&&y!=='\u2014'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
     rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

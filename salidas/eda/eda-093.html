@@ -1,11 +1,11 @@
-<div class="eda-table" id="eda-table-74"><span class="eda-table-title">Pares categóricos seleccionados · train</span><input aria-label="Buscar en Pares categóricos seleccionados · train" placeholder="Buscar en esta tabla…"><table class="dataframe">
+<div class="eda-table" id="eda-table-74"><span class="eda-table-title">Pares categ&#xf3;ricos seleccionados &#xb7; train</span><input aria-label="Buscar en Pares categ&#xf3;ricos seleccionados &#xb7; train" placeholder="Buscar en esta tabla&#x2026;"><table class="dataframe">
   <thead>
     <tr style="text-align: right;">
       <th>Variable A</th>
       <th>Variable B</th>
-      <th>χ²</th>
+      <th>&#x3c7;&#xb2;</th>
       <th>gl</th>
-      <th>Esperada mínima</th>
+      <th>Esperada m&#xed;nima</th>
       <th>Esperadas &lt;5</th>
       <th>Prueba</th>
       <th>p</th>
@@ -22,9 +22,9 @@
       <td>261.5896</td>
       <td>0</td>
       <td>Chi-cuadrado</td>
-      <td>≈0 (límite numérico)</td>
+      <td>&#x2248;0 (l&#xed;mite num&#xe9;rico)</td>
       <td>0.7252</td>
-      <td>≈0 (límite numérico)</td>
+      <td>&#x2248;0 (l&#xed;mite num&#xe9;rico)</td>
     </tr>
     <tr>
       <td>InternetService</td>
@@ -34,9 +34,9 @@
       <td>261.5896</td>
       <td>0</td>
       <td>Chi-cuadrado</td>
-      <td>≈0 (límite numérico)</td>
+      <td>&#x2248;0 (l&#xed;mite num&#xe9;rico)</td>
       <td>0.7232</td>
-      <td>≈0 (límite numérico)</td>
+      <td>&#x2248;0 (l&#xed;mite num&#xe9;rico)</td>
     </tr>
     <tr>
       <td>PhoneService</td>
@@ -46,9 +46,9 @@
       <td>55.4634</td>
       <td>0</td>
       <td>Chi-cuadrado</td>
-      <td>≈0 (límite numérico)</td>
+      <td>&#x2248;0 (l&#xed;mite num&#xe9;rico)</td>
       <td>1.0000</td>
-      <td>≈0 (límite numérico)</td>
+      <td>&#x2248;0 (l&#xed;mite num&#xe9;rico)</td>
     </tr>
     <tr>
       <td>Contract</td>
@@ -81,5 +81,5 @@
     root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
     const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
     const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
-    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    const c=(x!=='\u2014'&&y!=='\u2014'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
     rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

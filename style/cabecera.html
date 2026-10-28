@@ -63,6 +63,12 @@
       }
     });
 
+    /* Crédito al pie de cada página, como en el Jupyter Book. */
+    var pie = document.createElement('div');
+    pie.className = 'tc-pie';
+    pie.innerHTML = '<p>By Laura S. Rivera Figueredo y Natal&yacute; A. C&aacute;rdenas Izaquita</p><p>&copy; Copyright 2022.</p>';
+    main.appendChild(pie);
+
     /* Índice derecho con el mismo encabezado del Jupyter Book. */
     var indice = document.querySelector('#toc > h2');
     if (indice) indice.textContent = 'Contents';

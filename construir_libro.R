@@ -8,4 +8,8 @@ bookdown::render_book("index.Rmd", quiet = TRUE)
 file.copy("paper/paper.pdf", "_book/paper.pdf", overwrite = TRUE)
 file.create("_book/.nojekyll")
 
+# Librería Plotly de las gráficas interactivas (se carga como archivo aparte).
+dir.create("_book/salidas/js", recursive = TRUE, showWarnings = FALSE)
+file.copy("salidas/js/plotly.min.js", "_book/salidas/js/plotly.min.js", overwrite = TRUE)
+
 message("Libro listo: abre _book/index.html en el navegador.")
