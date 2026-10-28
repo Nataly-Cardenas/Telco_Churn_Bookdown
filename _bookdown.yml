@@ -1,0 +1,17 @@
+book_filename: "telco-churn"
+delete_merged_file: true
+output_dir: "_book"
+new_session: false
+rmd_files:
+  - index.Rmd
+  - 01-eda.Rmd
+  - 02-preprocesamiento.Rmd
+  - 03-modelado-avanzado.Rmd
+  - 04-paper.Rmd
+  - 05-guia-repositorio.Rmd
+language:
+  label:
+    fig: !expr function(i) paste0("Fig. ", i, " ")
+    tab: !expr function(i) paste0("Table ", i, " ")
+  ui:
+    chapter_name: ""

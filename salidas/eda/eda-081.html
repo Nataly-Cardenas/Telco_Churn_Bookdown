@@ -1,0 +1,86 @@
+<div class="eda-table" id="eda-table-70"><span class="eda-table-title">Prueba de normalidad · predictores numéricos de train</span><input aria-label="Buscar en Prueba de normalidad · predictores numéricos de train" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Variable</th>
+      <th>N</th>
+      <th>Asimetría</th>
+      <th>Curtosis (exceso)</th>
+      <th>K² D'Agostino–Pearson</th>
+      <th>p</th>
+      <th>Shapiro–Wilk W (ref.)</th>
+      <th>p Shapiro (ref.)</th>
+      <th>p Holm</th>
+      <th>¿Normal? (p Holm ≥ α)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>tenure</td>
+      <td>5634</td>
+      <td>0.2374</td>
+      <td>-1.3873</td>
+      <td>61,968.0805</td>
+      <td>≈0 (límite numérico)</td>
+      <td>0.9040</td>
+      <td>1.13e-50</td>
+      <td>≈0 (límite numérico)</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>MonthlyCharges</td>
+      <td>5634</td>
+      <td>-0.2244</td>
+      <td>-1.2604</td>
+      <td>9,413.9831</td>
+      <td>≈0 (límite numérico)</td>
+      <td>0.9206</td>
+      <td>1.81e-47</td>
+      <td>≈0 (límite numérico)</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>TotalCharges</td>
+      <td>5626</td>
+      <td>0.9475</td>
+      <td>-0.2675</td>
+      <td>637.4186</td>
+      <td>3.86e-139</td>
+      <td>0.8614</td>
+      <td>3.87e-57</td>
+      <td>3.86e-139</td>
+      <td>No</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-70');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>
+<div class="eda-table" id="eda-table-71"><span class="eda-table-title">Decisión del método de correlación</span><input aria-label="Buscar en Decisión del método de correlación" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Criterio</th>
+      <th>Resultado</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Variables que pasan la normalidad</td>
+      <td>0 de 3</td>
+    </tr>
+    <tr>
+      <td>Coeficiente de correlación elegido</td>
+      <td>Spearman</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-71');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

@@ -1,0 +1,28 @@
+<div class="eda-table" id="eda-table-77"><span class="eda-table-title">Concentración de faltantes por fila</span><input aria-label="Buscar en Concentración de faltantes por fila" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Nulos por fila</th>
+      <th>Filas</th>
+      <th>Porcentaje (%)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0</td>
+      <td>5626</td>
+      <td>99.86</td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>8</td>
+      <td>0.14</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-77');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

@@ -1,0 +1,14 @@
+bookdown::bs4_book:
+  theme:
+    primary: "#1B4F72"
+    fg: "#243447"
+    bg: "#FFFFFF"
+  css:
+    - style/componentes.css
+    - style/libro.css
+  includes:
+    in_header: style/cabecera.html
+  repo:
+    base: https://github.com/Nataly-Cardenas/Telco_Churn_Bookdown
+    branch: main
+  md_extensions: +lists_without_preceding_blankline-fancy_lists

@@ -1,0 +1,82 @@
+<link rel="icon" href="Imagenes/favicon.ico">
+<script>
+  /* Modo oscuro por defecto, como en el Jupyter Book; la preferencia queda guardada. */
+  (function () {
+    var tema = 'dark';
+    try { tema = localStorage.getItem('tc-tema') || 'dark'; } catch (e) {}
+    document.documentElement.setAttribute('data-theme', tema);
+  })();
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var iconos = {
+      menu: '<svg viewBox="0 0 448 512"><path d="M0 96c0-17.7 14.3-32 32-32h384c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zm0 160c0-17.7 14.3-32 32-32h384c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zm448 160c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32h384c17.7 0 32 14.3 32 32z"/></svg>',
+      descarga: '<svg viewBox="0 0 512 512"><path d="M288 32c0-17.7-14.3-32-32-32s-32 14.3-32 32v242.7l-73.4-73.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l128 128c12.5 12.5 32.8 12.5 45.3 0l128-128c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L288 274.7V32zM64 352c-35.3 0-64 28.7-64 64v32c0 35.3 28.7 64 64 64h384c35.3 0 64-28.7 64-64v-32c0-35.3-28.7-64-64-64H346.5l-45.3 45.3c-25 25-65.5 25-90.5 0L165.5 352H64z"/></svg>',
+      pantalla: '<svg viewBox="0 0 448 512"><path d="M32 32C14.3 32 0 46.3 0 64v96c0 17.7 14.3 32 32 32s32-14.3 32-32V96h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H32zm32 320c0-17.7-14.3-32-32-32S0 334.3 0 352v96c0 17.7 14.3 32 32 32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32H64v-64zM320 32c-17.7 0-32 14.3-32 32s14.3 32 32 32h64v64c0 17.7 14.3 32 32 32s32-14.3 32-32V64c0-17.7-14.3-32-32-32h-96zm128 320c0-17.7-14.3-32-32-32s-32 14.3-32 32v64h-64c-17.7 0-32 14.3-32 32s14.3 32 32 32h96c17.7 0 32-14.3 32-32v-96z"/></svg>',
+      tema: '<svg viewBox="0 0 512 512"><path d="M448 256c0-106-86-192-192-192v384c106 0 192-86 192-192zm64 0c0 141.4-114.6 256-256 256S0 397.4 0 256 114.6 0 256 0s256 114.6 256 256z"/></svg>',
+      buscar: '<svg viewBox="0 0 512 512"><path d="M416 208c0 45.9-14.9 88.3-40 122.7l126.6 126.7c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0s208 93.1 208 208zm-208 144a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg>'
+    };
+
+    /* Logo en la barra lateral, en lugar del título del libro. */
+    var titulo = document.querySelector('.sidebar-book h1 a');
+    if (titulo) {
+      titulo.setAttribute('title', titulo.textContent.trim());
+      titulo.innerHTML = '<img class="tc-logo" src="Imagenes/logo.png" alt="' + titulo.textContent.trim() + '">';
+    }
+
+    /* Barra superior con los mismos iconos del Jupyter Book. */
+    var main = document.querySelector('main');
+    if (!main) return;
+    var fuente = document.querySelector('#book-source');
+    var barra = document.createElement('div');
+    barra.className = 'tc-topbar';
+    barra.innerHTML =
+      '<div class="tc-topbar-group"><button class="tc-icono" data-accion="menu" title="Toggle primary sidebar" aria-label="Toggle primary sidebar">' + iconos.menu + '</button></div>' +
+      '<div class="tc-topbar-group">' +
+      (fuente ? '<a class="tc-icono" href="' + fuente.href.replace('/blob/', '/raw/') + '" title="Download source file" aria-label="Download source file">' + iconos.descarga + '</a>' : '') +
+      '<button class="tc-icono" data-accion="pantalla" title="Fullscreen mode" aria-label="Fullscreen mode">' + iconos.pantalla + '</button>' +
+      '<button class="tc-icono" data-accion="tema" title="Light/Dark" aria-label="Light/Dark">' + iconos.tema + '</button>' +
+      '<button class="tc-icono" data-accion="buscar" title="Search" aria-label="Search">' + iconos.buscar + '</button>' +
+      '</div>';
+    main.insertBefore(barra, main.firstChild);
+
+    barra.addEventListener('click', function (evento) {
+      var boton = evento.target.closest('button[data-accion]');
+      if (!boton) return;
+      var accion = boton.getAttribute('data-accion');
+      if (accion === 'menu') document.body.classList.toggle('tc-sin-lateral');
+      if (accion === 'pantalla') {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen();
+      }
+      if (accion === 'tema') {
+        var nuevo = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', nuevo);
+        try { localStorage.setItem('tc-tema', nuevo); } catch (e) {}
+      }
+      if (accion === 'buscar') {
+        var lateral = document.querySelector('.sidebar-book');
+        document.body.classList.remove('tc-sin-lateral');
+        lateral.classList.toggle('tc-buscando');
+        var campo = document.getElementById('search');
+        if (campo && lateral.classList.contains('tc-buscando')) campo.focus();
+      }
+    });
+
+    /* Índice derecho con el mismo encabezado del Jupyter Book. */
+    var indice = document.querySelector('#toc > h2');
+    if (indice) indice.textContent = 'Contents';
+
+    /* Pestañas del paper (Versión web / Versión PDF). */
+    document.querySelectorAll('.tc-tabs').forEach(function (grupo) {
+      var botones = grupo.querySelectorAll('.tc-tab-btn');
+      var paneles = grupo.querySelectorAll('.tc-tab-pane');
+      botones.forEach(function (boton, k) {
+        boton.addEventListener('click', function () {
+          botones.forEach(function (b, j) { b.classList.toggle('is-active', j === k); });
+          paneles.forEach(function (p, j) { p.classList.toggle('is-active', j === k); });
+        });
+      });
+    });
+  });
+</script>

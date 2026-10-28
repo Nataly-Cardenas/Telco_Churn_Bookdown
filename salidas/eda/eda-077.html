@@ -1,0 +1,132 @@
+<div class="eda-table" id="eda-table-69"><span class="eda-table-title">Mayor tasa de churn por variable</span><input aria-label="Buscar en Mayor tasa de churn por variable" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Variable</th>
+      <th>Categoría</th>
+      <th>Yes</th>
+      <th>Total categoría</th>
+      <th>Tasa churn (%)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>PaymentMethod</td>
+      <td>Electronic check</td>
+      <td>865</td>
+      <td>1891</td>
+      <td>45.74</td>
+    </tr>
+    <tr>
+      <td>Contract</td>
+      <td>Month-to-month</td>
+      <td>1326</td>
+      <td>3102</td>
+      <td>42.75</td>
+    </tr>
+    <tr>
+      <td>InternetService</td>
+      <td>Fiber optic</td>
+      <td>1045</td>
+      <td>2483</td>
+      <td>42.09</td>
+    </tr>
+    <tr>
+      <td>OnlineSecurity</td>
+      <td>No</td>
+      <td>1173</td>
+      <td>2797</td>
+      <td>41.94</td>
+    </tr>
+    <tr>
+      <td>TechSupport</td>
+      <td>No</td>
+      <td>1157</td>
+      <td>2771</td>
+      <td>41.75</td>
+    </tr>
+    <tr>
+      <td>SeniorCitizen</td>
+      <td>1</td>
+      <td>378</td>
+      <td>920</td>
+      <td>41.09</td>
+    </tr>
+    <tr>
+      <td>OnlineBackup</td>
+      <td>No</td>
+      <td>980</td>
+      <td>2442</td>
+      <td>40.13</td>
+    </tr>
+    <tr>
+      <td>DeviceProtection</td>
+      <td>No</td>
+      <td>963</td>
+      <td>2472</td>
+      <td>38.96</td>
+    </tr>
+    <tr>
+      <td>PaperlessBilling</td>
+      <td>Yes</td>
+      <td>1126</td>
+      <td>3331</td>
+      <td>33.80</td>
+    </tr>
+    <tr>
+      <td>StreamingMovies</td>
+      <td>No</td>
+      <td>745</td>
+      <td>2217</td>
+      <td>33.60</td>
+    </tr>
+    <tr>
+      <td>StreamingTV</td>
+      <td>No</td>
+      <td>737</td>
+      <td>2226</td>
+      <td>33.11</td>
+    </tr>
+    <tr>
+      <td>Partner</td>
+      <td>No</td>
+      <td>952</td>
+      <td>2905</td>
+      <td>32.77</td>
+    </tr>
+    <tr>
+      <td>Dependents</td>
+      <td>No</td>
+      <td>1240</td>
+      <td>3955</td>
+      <td>31.35</td>
+    </tr>
+    <tr>
+      <td>MultipleLines</td>
+      <td>Yes</td>
+      <td>688</td>
+      <td>2390</td>
+      <td>28.79</td>
+    </tr>
+    <tr>
+      <td>PhoneService</td>
+      <td>Yes</td>
+      <td>1360</td>
+      <td>5075</td>
+      <td>26.80</td>
+    </tr>
+    <tr>
+      <td>gender</td>
+      <td>Female</td>
+      <td>746</td>
+      <td>2801</td>
+      <td>26.63</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-69');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

@@ -1,0 +1,1255 @@
+# Modelamiento avanzado {#modelado-avanzado -}
+
+## 1. Modelos implementados y resultados obtenidos {-}
+
+### 1.1 Problema, continuidad y criterio de decisión {-}
+
+Se estudia la clasificación binaria de abandono de clientes de telecomunicaciones: Churn=Yes es la clase positiva (1) y permanencia es la clase negativa (0). El modelado continúa el ETL, EDA, preprocesamiento y modelado inicial previamente realizados. 
+
+El objetivo es identificar clientes en riesgo: interesa un Recall elevado. Se utiliza F1 positivo como único criterio de optimización, porque combina Precision y Recall y penaliza las falsas alertas que una optimización aislada de Recall podría ignorar. ROC-AUC, Accuracy, Precision y Recall complementan la evaluación. No se dispone de una razón numérica de costes; no se afirma que F1 maximice rentabilidad. La referencia experimental es Sin balanceo dentro de cada familia, sin añadir clasificadores triviales.
+
+La evidencia principal procede de validación cruzada anidada sobre 5.634 clientes de desarrollo, con 1.495 abandonos (26,54 %). Se conserva el test histórico de 1.409 clientes, ya expuesto durante la primera entrega: su uso posterior es suplementario y no equivale a una nueva validación externa independiente.
+
+- Configuración del entorno: Antes de ejecutar el notebook, es indispensable usar un entorno virtual con python 3.12 que tenga instalado `requirements.txt`. Siga estos pasos para crear el entorno virtual:
+
+> 1. Abrir *Anaconda PowerShell Prompt*
+
+> 2. Ejecutar los siguientes comandos:
+> ```bash
+> conda create -n ml_project python=3.12 -y
+> conda activate ml_project
+> cd "RUTA_DE_LA_CARPETA_DEL_PROYECTO"
+> python -m pip install -r requirements.txt
+
+```{r mod-002}
+print(getwd())
+print(c(ROOT, ANALISIS))
+print(c(dir.exists(ROOT), dir.exists(ANALISIS)))
+print(head(list.files(getwd(), all.files = TRUE, no.. = TRUE), 30))
+```
+
+```{r mod-002-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-002")
+```
+
+```{r mod-003}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(jsonlite)
+library(digest)
+library(ggplot2)
+library(yardstick)
+library(knitr)
+library(kableExtra)
+
+ROOT <- getwd()
+ANALISIS <- file.path(ROOT, "resultados_modelado/analisis_final")
+OFICIAL <- file.path(ROOT, "resultados_modelado/oficial/20260920T030103_517c8c6b7906_69c6c7")
+SEMILLA_GLOBAL <- 42
+RECALCULAR_COSTOSO <- FALSE
+MODO <- "resultados_guardados_y_derivaciones_ligeras"
+stopifnot("Ejecutar desde la carpeta que contiene los tres capítulos." = dir.exists(ANALISIS))
+
+leer_tabla <- function(nombre) {
+  # Lee CSV preservando exactamente scores y empates (doble precisión, sin redondeo).
+  read_csv(file.path(ANALISIS, nombre), show_col_types = FALSE, col_types = cols(.default = col_guess()))
+}
+
+tabla <- function(frame, decimales = 4) {
+  # Presenta todas las filas sin modificar los valores de origen.
+  formato <- frame |>
+    mutate(across(any_of(c("p_raw", "p_holm", "p_exploratory")), ~ formatC(.x, format = "e", digits = 3)),
+           across(where(is.double), ~ ifelse(is.na(.x), "No aplica", formatC(.x, format = "f", digits = decimales))))
+  kbl(formato, format = "html", row.names = FALSE) |>
+    kable_styling(font_size = 12)
+}
+
+UNIDADES <- leer_tabla("unidades.csv")
+PRINCIPAL <- filter(UNIDADES, replicate == 0)
+METRICAS <- c("accuracy", "precision_positive", "recall_positive", "f1_positive", "roc_auc", "brier", "ece")
+RESUMEN <- PRINCIPAL |>
+  group_by(experiment_id, model, balance, optimizer) |>
+  summarise(across(all_of(METRICAS), list(mean = mean, std = sd)), .groups = "drop") |>
+  arrange(desc(f1_positive_mean), experiment_id)
+MODELOS <- c("knn", "naive_bayes", "logistic", "decision_tree", "random_forest", "xgboost", "svm")
+NOMBRES <- c(knn = "KNN", naive_bayes = "GaussianNB", logistic = "Logística", decision_tree = "Árbol",
+             random_forest = "Random Forest", xgboost = "XGBoost", svm = "SVM")
+BALANCEOS <- c(none = "Sin balanceo", smote = "SMOTE", adasyn = "ADASYN", balanced = "Ponderación")
+OPTIMIZADORES <- c(grid = "Grid", random = "Random", bayesian_tpe = "TPE", genetic = "Genético")
+REPRESENTANTES <- RESUMEN |>
+  distinct(model, .keep_all = TRUE) |>
+  slice(match(MODELOS, model))
+stopifnot(nrow(RESUMEN) == 112, nrow(UNIDADES) == 1680)
+stopifnot(!anyDuplicated(select(UNIDADES, experiment_id, replicate, outer_fold)))
+stopifnot(all(count(UNIDADES, experiment_id, replicate)$n == 5))
+stopifnot(all(UNIDADES$evaluations == 24))
+referencia <- leer_tabla("resumen_112.csv") |> arrange(experiment_id)
+stopifnot(isTRUE(all.equal(select(arrange(RESUMEN, experiment_id), where(is.numeric)),
+                           select(referencia, where(is.numeric)), tolerance = 1e-12, check.attributes = FALSE)))
+```
+
+### 1.2 Universo experimental y reproducibilidad {-}
+
+Se mantuvo un diseño factorial de siete familias, cuatro balanceos y cuatro optimizadores. Las 112 configuraciones se evaluaron con los mismos folds. Se realizaron tres realizaciones algorítmicas; la principal se identifica como realización 0. Las otras dos permiten observar sensibilidad a semillas sin confundirlas con nuevas muestras independientes.
+
+La semilla raíz fue 42. `SeedSequence` derivó semillas por función y coordenadas (realización, fold y candidato), separando particiones, modelo, remuestreo, optimizador y calibración. Las particiones externas e internas se mantuvieron comunes para emparejar comparaciones. El registro conserva las semillas efectivamente utilizadas, no solo la raíz.
+
+```{r mod-005}
+tabla(tibble(Familias = n_distinct(UNIDADES$model), Balanceos = n_distinct(UNIDADES$balance),
+             Optimizadores = n_distinct(UNIDADES$optimizer), Configuraciones = n_distinct(UNIDADES$experiment_id),
+             Realizaciones = n_distinct(UNIDADES$replicate), `Folds externos` = n_distinct(UNIDADES$outer_fold),
+             `Unidades terminadas` = nrow(UNIDADES), `Candidatos por búsqueda` = as.integer(min(UNIDADES$evaluations))))
+```
+
+```{r mod-005-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-005")
+```
+
+**Interpretación.** La cobertura corresponde a 112 × 3 × 5 = 1.680 unidades externas, sin configuraciones omitidas. Cada búsqueda consumió 24 evaluaciones únicas. Las realizaciones no amplían el número de datasets ni convierten los folds solapados en observaciones independientes. Estos resultados son oficiales; los pilotos técnicos no se incorporan a las tablas.
+
+### 1.3 Pipeline: transformaciones y prevención de fuga de información {-}
+
+Cada ajuste construyó un Pipeline nuevo con el orden:
+
+Datos originales → reglas deterministas → escalado/codificación → balanceo del entrenamiento → clasificador.
+
+Se recuperaron el CSV original y los índices históricos, no matrices previamente escaladas. `TotalCharges` se convirtió a numérico; los blancos con antigüedad cero se trataron con la regla histórica. Se unificaron categorías de ausencia de servicio y se calculó `AvgChargePerMonth`, con respaldo en `MonthlyCharges` cuando la antigüedad es cero. Son reglas deterministas, no estimaciones aprendidas usando validación.
+
+`StandardScaler` se ajustó sobre tenure, MonthlyCharges, TotalCharges, SeniorCitizen y AvgChargePerMonth. `OneHotEncoder(drop='first', handle_unknown='ignore')` se ajustó sobre las variables categóricas del entrenamiento. La representación usada tiene 24 columnas. La imputación determinista no autoriza a calcular medias o escalas globales: los parámetros aprendidos se estiman únicamente en cada subconjunto de ajuste.
+
+El balanceo se ubicó dentro de `imblearn.Pipeline`, después de transformar las variables. En validación y prueba solo se transforma y predice; nunca se remuestrean sus observaciones. SMOTE y ADASYN sobre one-hot pueden generar indicadores fraccionarios y utilizan distancias sobre esta representación. Esta limitación se conserva al interpretar sus resultados; no se sustituyó retrospectivamente el procedimiento por otro.
+
+#### Familias y capacidad del modelo {-}
+
+KNN usa consulta exacta `brute` y distancias Minkowski; GaussianNB estima distribuciones gaussianas por clase y variable; Logística utiliza `liblinear` y regularización L1/L2; Decision Tree y Random Forest controlan capacidad mediante profundidad y tamaño mínimo de hoja; XGBoost utiliza histogramas en CPU y objetivo binario; SVM usa kernel RBF con `probability=False`.
+
+Estas familias cubren vecinos, modelos probabilísticos, separación lineal regularizada, árboles, ensambles y separación no lineal. La evaluación aplica la misma métrica interna y los mismos folds. Ninguna familia se elimina por obtener un desempeño menor.
+
+```{r mod-009}
+tabla(tribble(
+  ~Estrategia, ~Operación, ~Justificación,
+  "Sin balanceo", "Conserva frecuencias del entrenamiento", "Línea base dentro de cada familia",
+  "SMOTE", "5 vecinos; sampling_strategy=1.0", "Genera minoritarios interpolados solo en fit",
+  "ADASYN", "5 vecinos; sampling_strategy=1.0", "Concentra generación en zonas difíciles del entrenamiento",
+  "Ponderación balanceada", "w_c=n/(2 n_c), calculado dentro de fit", "Aumenta contribución de la clase menos frecuente"
+))
+```
+
+```{r mod-009-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-009")
+```
+
+Interpretación metodológica. Las cuatro estrategias cambian el aprendizaje, no la prevalencia de evaluación. Logística, árboles, Random Forest y SVM usan pesos de clase nativos; GaussianNB y XGBoost reciben pesos por observación; KNN pondera explícitamente el voto de sus vecinos por clase. Esta última es una adaptación documentada, no una opción nativa `class_weight` de KNN. Los pesos se recalculan por entrenamiento y no se asume que sus scores queden calibrados.
+
+### 1.4 Validación cruzada anidada y registro por unidad {-}
+
+Se emplearon cinco folds externos estratificados y tres internos estratificados. Para cada realización y fold externo:
+
+1. Se reservó el fold externo sin utilizar sus etiquetas para elegir parámetros.
+2. Cada candidato se evaluó sobre los tres folds internos. En cada uno se ajustaron de nuevo transformaciones, balanceo y clasificador exclusivamente en entrenamiento interno.
+3. El optimizador recibió únicamente la media de F1 positivo interno.
+4. Se eligió el candidato con mejor media interna y se reajustó el Pipeline sobre todo el entrenamiento externo.
+5. Se guardaron etiquetas, scores y probabilidades del fold externo; estas predicciones sustentan el reporte principal.
+
+El mismo evaluador interno se usó para los cuatro optimizadores. Un candidato repetido se recupera solo dentro de su búsqueda y no consume otra evaluación única. No se comparten ajustes entre optimizadores: hacerlo favorecería artificialmente su tiempo medido. Las particiones y estructuras administrativas sí pueden reutilizarse, porque no incorporan aprendizaje de validación.
+
+Cada unidad tiene identificadores de configuración, realización y fold. Los checkpoints guardan parámetros, semillas, tiempos, métricas internas/externas separadas y hashes. Se publican como completos solo tras verificarse sus artefactos. Un bloqueo impide dos escritores simultáneos; recuperar una interrupción no elimina intentos anteriores.
+
+```{r mod-012}
+tabla(head(select(UNIDADES, experiment_id, replicate, outer_fold, best_inner_f1, f1_positive, evaluations,
+                  model_seed, sampler_seed, optimizer_seed), 3))
+```
+
+```{r mod-012-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-012")
+```
+
+**Interpretación.** Las filas ilustran el contrato del registro, no una comparación de ganadores. `best_inner_f1` selecciona hiperparámetros; `f1_positive` corresponde al fold externo reservado. Mantener ambos campos separados evita reportar como generalización el valor usado para optimizar. La tabla maestra conserva este contrato en las 1.680 unidades.
+
+### 1.5 Espacios de búsqueda y presupuesto común {-}
+
+Se fijaron los espacios antes de observar los resultados. Grid tiene exactamente 24 combinaciones por familia. Los demás optimizadores usan el mismo soporte categórico o los mismos límites continuos; compartir límites no equivale a evaluar los mismos puntos. Las escalas logarítmicas exploran órdenes de magnitud de regularización y del kernel sin concentrarse en el extremo superior.
+
+```{r mod-015}
+tabla(tribble(
+  ~Familia, ~`Grid: 24 candidatos`, ~`Otros optimizadores`, ~Justificación,
+  "KNN", "k={3,5,11,21,41,81}; weights={uniform,distance}; p={1,2}", "Categorías comunes", "k controla suavizado; ponderación y distancia cambian vecindad sin aproximar la consulta.",
+  "GaussianNB", "24 valores log de var_smoothing en [10⁻¹²,10⁻¹]", "Continuo log en el mismo intervalo", "Explora estabilidad de varianzas pequeñas frente a suavizado excesivo.",
+  "Logística", "12 valores log de C en [10⁻³,10³] × {L1,L2}", "C continuo log; penalización categórica", "C inverso de regularización; L1/L2 permiten diferentes restricciones de coeficientes.",
+  "Decision Tree", "depth={3,6,12,None}; leaf={1,5,20}; criterion={gini,entropy}", "Categorías comunes", "Profundidad y hoja limitan fragmentación y sobreajuste.",
+  "Random Forest", "T={100,200,300}; depth={8,None}; leaf={1,5}; features={sqrt,0.7}", "Categorías comunes", "Contrasta coste de árboles y control de capacidad/diversidad.",
+  "XGBoost", "T={100,300}; depth={2,4,6}; eta={0.03,0.1}; subsample={0.8,1}", "eta log [0.03,0.1]; subsample continuo [0.8,1]", "Explora capacidad, paso de boosting y submuestreo sin usar early stopping externo.",
+  "SVM RBF", "C={0.01,0.1,1,10,100,1000}; gamma={0.001,0.01,0.1,1}", "C y gamma continuos log en los mismos límites", "C controla regularización; gamma controla alcance del kernel."
+))
+```
+
+```{r mod-015-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-015")
+```
+
+Interpretación del diseño. KNN, árbol y Random Forest tienen 24 candidatos posibles en los cuatro métodos: consumir 24 evaluaciones únicas agota su soporte, por lo que pueden empatar al terminar. GaussianNB, Logística, XGBoost y SVM incluyen parámetros continuos fuera de los puntos concretos de Grid. La comparación evalúa las implementaciones y estos presupuestos, no una superioridad universal entre familias de optimización.
+
+### 1.6 Cuatro optimizadores sobre el mismo objetivo interno {-}
+
+Grid Search. Enumera la malla completa de 24 candidatos. Es una referencia exhaustiva dentro de esa rejilla y su progreso inicial depende del orden de enumeración.
+
+Random Search. Muestrea categorías uniformemente y variables continuas en su escala declarada. Se evita volver a evaluar duplicados. Puede explorar regiones intermedias de dominios continuos sin una rejilla más grande.
+
+TPE con Optuna. Tras ocho propuestas iniciales aleatorias, estima densidades Parzen de configuraciones favorables y restantes y selecciona propuestas según su cociente, relacionado con mejora esperada. Usa 24 candidatos de adquisición y semilla propia. No es un proceso gaussiano ni emplea UCB. No se reduce la fidelidad de los ajustes. Los duplicados se registran y se marcan PRUNED para no aportar evidencia repetida; tras ocho duplicados consecutivos se encola una configuración inédita (`forced_exploration`). Este rescate mantiene el presupuesto en dominios discretos pequeños y forma parte del método implementado.
+
+Genético con DEAP. La población es de ocho individuos; el fitness es la media interna de F1 del Pipeline asociado. Usa torneo de tamaño dos, cruce uniforme con probabilidad 0,8 por pareja y 0,5 por gen, mutación con probabilidad 0,3 por individuo y 1/d por gen, y elitismo de un individuo. Genes continuos se representan en [0,1], con transformación logarítmica cuando corresponde; categorías se codifican por índices. Se registran genotipos, fitness y diversidad por generación. Una generación sin candidatos nuevos incorpora un inmigrante inédito (`novelty_restart`), conservando la élite.
+
+Las 24 evaluaciones únicas constituyen el mismo presupuesto de ajuste interno. Propuestas, duplicados y rescates se registran por separado. Ni una meseta ni el agotamiento de este presupuesto prueban convergencia global. No se añadió multifidelidad opcional para no cambiar la fidelidad común del experimento.
+
+### 1.7 Métricas y forma de reportar {-}
+
+Para la clase abandono: $Precision=TP/(TP+FP)$, $Recall=TP/(TP+FN)$ y $F1=2TP/(2TP+FP+FN)$. Accuracy contabiliza la fracción total correcta; ROC-AUC compara el orden de scores entre clases sin fijar un único umbral. Se conserva la regla de decisión del estimador, sin ajustar umbrales sobre folds externos. Los casos de denominador cero se registran explícitamente.
+
+Las tablas siguientes muestran media ± desviación estándar muestral de cinco folds externos de la realización 0. La dispersión entre semillas se presenta posteriormente como un estimando diferente. Las matrices de confusión y curvas concatenan predicciones OOF de esa realización para visualizar errores; sus métricas agregadas no sustituyen las medias por fold.
+
+Se muestran las 16 configuraciones de cada familia en tablas compactas. Para evitar 112 paneles redundantes, se presenta un panel del mayor F1 medio observado de cada familia, con desempate por identificador. Esta selección es descriptiva: muestra ejemplos pertinentes y no acredita superioridad. Las métricas de todas las configuraciones permanecen visibles en las tablas.
+
+#### Calibración probabilística y recalibración: procedimiento previo a la evaluación {-}
+
+El balanceo puede alterar la relación entre scores y prevalencia real. Se evaluó una rama complementaria sigmoid (Platt) para todas las configuraciones, definida previamente. `CalibratedClassifierCV` utilizó tres folds dentro del entrenamiento externo y `ensemble=False`: generó scores internos para ajustar sigmoid y reajustó el Pipeline base sobre ese entrenamiento. El fold externo no entrenó al calibrador. Esta rama añade cuatro ajustes lógicos por unidad y se mantuvo separada de la selección principal.
+
+El Brier binario es la media de $(p_i-y_i)^2$ y combina calibración y discriminación. ECE es $sum_b(n_b/n)|acc_b-conf_b|$ para diez intervalos uniformes de probabilidad, con $acc_b$ como frecuencia observada de abandono. Depende de los bins; no se interpreta aisladamente como prueba de calibración perfecta. Los diagramas anteriores muestran frecuencia frente a probabilidad y soporte por intervalos.
+
+```{r mod-020}
+confiabilidad <- function(y, probability, bins = 10) {
+  # Calcula ECE y frecuencias por intervalos uniformes de probabilidad.
+  indices <- pmin(floor(probability * bins), bins - 1)
+  frame <- map_dfr(0:(bins - 1), function(b) {
+    mask <- indices == b; n <- sum(mask)
+    tibble(bin = b, n = n, mean_probability = if (n) mean(probability[mask]) else NA_real_,
+           event_rate = if (n) mean(y[mask]) else NA_real_)
+  })
+  ece <- sum(frame$n / length(y) * abs(frame$event_rate - frame$mean_probability), na.rm = TRUE)
+  list(frame = frame, ece = ece)
+}
+
+metricas_predicciones <- function(y, labels, score, probability = NULL) {
+  # Deriva métricas binarias de predicciones reservadas, sin ajustar modelos.
+  verdad <- factor(y, levels = c(1, 0)); pred <- factor(labels, levels = c(1, 0))
+  cm <- table(factor(y, levels = 0:1), factor(labels, levels = 0:1))
+  result <- list(accuracy = accuracy_vec(verdad, pred), precision_positive = precision_vec(verdad, pred),
+                 recall_positive = recall_vec(verdad, pred), f1_positive = f_meas_vec(verdad, pred),
+                 roc_auc = roc_auc_vec(verdad, score), tn = cm[1, 1], fp = cm[1, 2], fn = cm[2, 1], tp = cm[2, 2])
+  if (!is.null(probability) && all(is.finite(probability))) {
+    result$brier <- mean((probability - y)^2)
+    result$ece <- confiabilidad(y, probability)$ece
+  }
+  result
+}
+
+predicciones_oof <- function(eid) {
+  # Une folds disjuntos y verifica métricas contra el registro oficial.
+  filas <- PRINCIPAL |> filter(experiment_id == eid) |> arrange(outer_fold)
+  data <- pmap_dfr(filas, function(...) {
+    row <- list(...)
+    folder <- file.path(OFICIAL, str_replace_all(row$attempt_path, fixed("\\"), "/"))
+    pred <- read_csv(file.path(folder, "predictions.csv"), show_col_types = FALSE)
+    calibrated <- read_csv(file.path(folder, "calibrated_predictions.csv"), show_col_types = FALSE)
+    stopifnot(identical(pred$row_id, calibrated$row_id))
+    obtained <- metricas_predicciones(pred$y_true, pred$y_pred, pred$score_positive, pred$probability_native)
+    for (metric in intersect(METRICAS, names(obtained))) {
+      stopifnot(abs(obtained[[metric]] - row[[metric]]) <= 1e-12)
+    }
+    mutate(pred, probability_sigmoid = calibrated$probability_sigmoid)
+  }) |>
+    arrange(row_id)
+  stopifnot(nrow(data) == 5634, !anyDuplicated(data$row_id))
+  data
+}
+
+panel_evaluacion <- function(eid) {
+  # Traza confusión, ROC y confiabilidad desde scores externos guardados.
+  data <- predicciones_oof(eid)
+  cm <- as.data.frame(table(`Clase real` = factor(data$y_true, 0:1), Predicción = factor(data$y_pred, 0:1)))
+  confusion <- ggplot(cm, aes(Predicción, `Clase real`, fill = Freq)) +
+    geom_tile() + geom_text(aes(label = Freq, colour = Freq > max(Freq) / 2), show.legend = FALSE) +
+    scale_fill_distiller(palette = "Blues", direction = 1, guide = "none") +
+    scale_colour_manual(values = c(`TRUE` = "white", `FALSE` = "black")) +
+    scale_y_discrete(limits = rev) + labs(title = "Confusión OOF") + theme_minimal()
+  verdad <- factor(data$y_true, levels = c(1, 0))
+  roc <- roc_curve(tibble(verdad, score = data$score_positive), verdad, score) |>
+    ggplot(aes(1 - specificity, sensitivity)) +
+    geom_path(aes(colour = sprintf("AUC OOF=%.3f", roc_auc_vec(verdad, data$score_positive)))) +
+    geom_abline(linetype = "dashed", colour = "gray") +
+    labs(x = "Tasa de falsos positivos", y = "Recall", title = "ROC descriptiva", colour = NULL) + theme_minimal()
+  curvas <- imap_dfr(c(Nativa = "probability_native", Sigmoid = "probability_sigmoid"), function(col, etiqueta) {
+    if (anyNA(data[[col]])) return(NULL)
+    filter(confiabilidad(data$y_true, data[[col]])$frame, n > 0) |> mutate(curva = etiqueta)
+  })
+  fiabilidad <- ggplot(curvas, aes(mean_probability, event_rate, colour = curva)) +
+    geom_point() + geom_line() + geom_abline(linetype = "dashed", colour = "gray") +
+    coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
+    labs(x = "Probabilidad media", y = "Frecuencia de abandono", title = "Confiabilidad: 10 bins", colour = NULL) +
+    theme_minimal()
+  patchwork::wrap_plots(confusion, roc, fiabilidad, nrow = 1) + patchwork::plot_annotation(title = eid)
+}
+```
+
+```{r mod-021}
+resultados_familia <- function(modelo) {
+  # Formatea las 16 configuraciones de una familia sin repetir evaluaciones.
+  datos <- RESUMEN |> filter(model == modelo) |> arrange(balance, optimizer)
+  vista <- tibble(Balanceo = BALANCEOS[datos$balance], Optimizador = OPTIMIZADORES[datos$optimizer])
+  campos <- c(f1_positive = "F1", recall_positive = "Recall", precision_positive = "Precision",
+              accuracy = "Accuracy", roc_auc = "AUC")
+  for (campo in names(campos)) {
+    vista[[paste(campos[[campo]], "media ± DS")]] <-
+      sprintf("%.4f ± %.4f", datos[[paste0(campo, "_mean")]], datos[[paste0(campo, "_std")]])
+  }
+  vista$`Brier nativo` <- datos$brier_mean
+  vista$`ECE nativo` <- datos$ece_mean
+  vista
+}
+```
+
+#### Resultados de KNN {-}
+
+Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas particiones. La referencia sin balanceo permite distinguir el cambio observado sin añadir otra familia de modelos.
+
+```{r mod-023}
+tabla(resultados_familia("knn"))
+```
+
+```{r mod-023-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-023")
+```
+
+**Interpretación.** El mayor F1 medio observado fue 0.6126 ± 0.0118, con SMOTE y TPE. Hay 4 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5916; la diferencia descriptiva es +0.0210. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.8227, Precision=0.4880 y AUC=0.8307 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
+
+```{r mod-025}
+panel_evaluacion("knn__smote__bayesian_tpe")
+```
+
+```{r mod-025-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-025")
+```
+
+Lectura del panel. La matriz OOF registra TN=2848, FP=1291, FN=265 y TP=1230; los 265 falsos negativos son abandonos omitidos y las 1291 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8307, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad se contrasta frecuencia observada con probabilidad asignada: Brier pasa de 0.1824 a 0.1414 y ECE de 0.1719 a 0.0219 (medias externas). La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
+
+#### Resultados de Gaussian Naive Bayes {-}
+
+Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas particiones. La referencia sin balanceo permite distinguir el cambio observado sin añadir otra familia de modelos.
+
+```{r mod-028}
+tabla(resultados_familia("naive_bayes"))
+```
+
+```{r mod-028-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-028")
+```
+
+**Interpretación.** El mayor F1 medio observado fue 0.6198 ± 0.0180, con Sin balanceo y Random. Hay 1 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.6198; la diferencia descriptiva es +0.0000. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7739, Precision=0.5172 y AUC=0.8301 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
+
+```{r mod-030}
+panel_evaluacion("naive_bayes__none__random")
+```
+
+```{r mod-030-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-030")
+```
+
+Lectura del panel. La matriz OOF registra TN=3056, FP=1083, FN=338 y TP=1157; los 338 falsos negativos son abandonos omitidos y las 1083 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8301, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad se contrasta frecuencia observada con probabilidad asignada: Brier pasa de 0.2135 a 0.1471 y ECE de 0.2063 a 0.0278 (medias externas). La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
+
+#### Resultados de Regresión Logística {-}
+
+Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas particiones. La referencia sin balanceo permite distinguir el cambio observado sin añadir otra familia de modelos.
+
+```{r mod-033}
+tabla(resultados_familia("logistic"))
+```
+
+```{r mod-033-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-033")
+```
+
+**Interpretación.** El mayor F1 medio observado fue 0.6340 ± 0.0188, con SMOTE y Grid. Hay 1 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5979; la diferencia descriptiva es +0.0361. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7806, Precision=0.5343 y AUC=0.8441 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
+
+```{r mod-035}
+panel_evaluacion("logistic__smote__grid")
+```
+
+```{r mod-035-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-035")
+```
+
+Lectura del panel. La matriz OOF registra TN=3117, FP=1022, FN=328 y TP=1167; los 328 falsos negativos son abandonos omitidos y las 1022 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8441, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad se contrasta frecuencia observada con probabilidad asignada: Brier pasa de 0.1625 a 0.1356 y ECE de 0.1442 a 0.0240 (medias externas). La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
+
+#### Resultados de Decision Tree {-}
+
+Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas particiones. La referencia sin balanceo permite distinguir el cambio observado sin añadir otra familia de modelos.
+
+```{r mod-038}
+tabla(resultados_familia("decision_tree"))
+```
+
+```{r mod-038-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-038")
+```
+
+**Interpretación.** El mayor F1 medio observado fue 0.6119 ± 0.0093, con SMOTE y TPE. Hay 4 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5892; la diferencia descriptiva es +0.0228. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7304, Precision=0.5270 y AUC=0.8242 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
+
+```{r mod-040}
+panel_evaluacion("decision_tree__smote__bayesian_tpe")
+```
+
+```{r mod-040-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-040")
+```
+
+Lectura del panel. La matriz OOF registra TN=3157, FP=982, FN=403 y TP=1092; los 403 falsos negativos son abandonos omitidos y las 982 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8242, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad se contrasta frecuencia observada con probabilidad asignada: Brier pasa de 0.1672 a 0.1442 y ECE de 0.1276 a 0.0371 (medias externas). La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
+
+#### Resultados de Random Forest {-}
+
+Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas particiones. La referencia sin balanceo permite distinguir el cambio observado sin añadir otra familia de modelos.
+
+```{r mod-043}
+tabla(resultados_familia("random_forest"))
+```
+
+```{r mod-043-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-043")
+```
+
+**Interpretación.** El mayor F1 medio observado fue 0.6384 ± 0.0227, con SMOTE y TPE. Hay 4 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5741; la diferencia descriptiva es +0.0644. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7351, Precision=0.5646 y AUC=0.8438 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
+
+```{r mod-045}
+panel_evaluacion("random_forest__smote__bayesian_tpe")
+```
+
+```{r mod-045-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-045")
+```
+
+Lectura del panel. La matriz OOF registra TN=3289, FP=850, FN=396 y TP=1099; los 396 falsos negativos son abandonos omitidos y las 850 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8438, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad se contrasta frecuencia observada con probabilidad asignada: Brier pasa de 0.1515 a 0.1363 y ECE de 0.1106 a 0.0292 (medias externas). La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
+
+#### Resultados de XGBoost {-}
+
+Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas particiones. La referencia sin balanceo permite distinguir el cambio observado sin añadir otra familia de modelos.
+
+```{r mod-048}
+tabla(resultados_familia("xgboost"))
+```
+
+```{r mod-048-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-048")
+```
+
+**Interpretación.** El mayor F1 medio observado fue 0.6380 ± 0.0206, con SMOTE y Random. Hay 1 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5887; la diferencia descriptiva es +0.0493. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7452, Precision=0.5585 y AUC=0.8461 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
+
+```{r mod-050}
+panel_evaluacion("xgboost__smote__random")
+```
+
+```{r mod-050-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-050")
+```
+
+Lectura del panel. La matriz OOF registra TN=3254, FP=885, FN=381 y TP=1114; los 381 falsos negativos son abandonos omitidos y las 885 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8461, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad se contrasta frecuencia observada con probabilidad asignada: Brier pasa de 0.1493 a 0.1357 y ECE de 0.1030 a 0.0303 (medias externas). La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
+
+#### Resultados de SVM RBF {-}
+
+Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas particiones. La referencia sin balanceo permite distinguir el cambio observado sin añadir otra familia de modelos.
+
+```{r mod-053}
+tabla(resultados_familia("svm"))
+```
+
+```{r mod-053-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-053")
+```
+
+**Interpretación.** El mayor F1 medio observado fue 0.6307 ± 0.0190, con SMOTE y Genético. Hay 1 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5776; la diferencia descriptiva es +0.0531. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7786, Precision=0.5304 y AUC=0.8392 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. En SVM, Brier/ECE nativos no aplican: su margen no es una probabilidad; se evalúa su rama sigmoid más adelante.
+
+```{r mod-055}
+panel_evaluacion("svm__smote__genetic")
+```
+
+```{r mod-055-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-055")
+```
+
+Lectura del panel. La matriz OOF registra TN=3105, FP=1034, FN=331 y TP=1164; los 331 falsos negativos son abandonos omitidos y las 1034 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8392, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad se contrasta frecuencia observada con probabilidad asignada: La rama sigmoid tiene Brier=0.1374 y ECE=0.0224; no se inventa una comparación con probabilidades nativas inexistentes. La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
+
+### 1.8 Síntesis de los resultados de calibración {-}
+
+La tabla siguiente reúne las mismas siete configuraciones representativas: no se elige una nueva configuración por su Brier. Una reducción en Brier/ECE no garantiza mejora de F1 con el umbral predeterminado.
+
+```{r mod-058}
+CALIBRACION <- PRINCIPAL |>
+  group_by(experiment_id) |>
+  summarise(across(c(brier, ece, cal_brier, cal_ece), mean), .groups = "drop") |>
+  mutate(delta_brier = cal_brier - brier, delta_ece = cal_ece - ece)
+tabla(REPRESENTANTES |>
+        select(model, experiment_id) |>
+        inner_join(CALIBRACION, by = "experiment_id") |>
+        select(model, brier, cal_brier, delta_brier, ece, cal_ece, delta_ece))
+```
+
+```{r mod-058-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-058")
+```
+
+**Interpretación.** Los deltas son calibrado menos nativo: valores negativos indican reducción del error. En el universo completo, Brier y ECE disminuyeron conjuntamente en 80 de las 96 configuraciones con probabilidades nativas; no hubo mejora universal. Las otras 16 son SVM y requieren la rama sigmoid para estas métricas. La evaluación ya incluye recalibración donde corresponde; no se reajusta sigmoid usando los resultados mostrados.
+
+### 1.9 Robustez algorítmica e intervalos de confianza {-}
+
+Las tres realizaciones comparten folds, pero varían las semillas de optimización, modelo y remuestreo. Se muestran las medias externas por realización de los representantes elegidos usando solo la realización principal. La dispersión entre ellas describe sensibilidad algorítmica con particiones fijas; no estima variación por obtener otros clientes.
+
+Los IC de F1 ya guardados emplean 2.000 remuestreos estratificados condicionales por fold, con modelos fijos. El remuestreo equivalente de conteos de confusión evita materializar filas repetidas. Se agregan para el estimando de media condicional de los folds. No incorporan reentrenamiento, selección entre 112 configuraciones ni incertidumbre por nuevos folds y no se utilizan como pruebas de superioridad.
+
+```{r mod-061}
+conditional_f1_intervals <- function(units, draws = 2000) {
+  # Bootstrap estratificado condicional de sujetos, con modelos fijos.
+  map_dfr(split(units, units$experiment_id), function(g) {
+    g <- arrange(g, outer_fold)
+    samples <- map(seq_len(nrow(g)), function(i) {
+      r <- g[i, ]
+      set.seed(42 * 1e6 + 101 * 1e3 + r$outer_fold)   # semilla derivada de (42, 101, fold)
+      pos <- r$tp + r$fn; neg <- r$tn + r$fp
+      tp <- rbinom(draws, pos, r$tp / pos); fp <- rbinom(draws, neg, r$fp / neg)
+      2 * tp / (pos + tp + fp)
+    })
+    folds <- map2_dfr(samples, g$outer_fold, ~ tibble(experiment_id = g$experiment_id[1], scope = "fold", fold = .y,
+                                                       low = quantile(.x, 0.025), high = quantile(.x, 0.975), draws = draws))
+    media <- rowMeans(do.call(cbind, samples))
+    bind_rows(folds, tibble(experiment_id = g$experiment_id[1], scope = "conditional_mean", fold = -1,
+                            low = quantile(media, 0.025), high = quantile(media, 0.975), draws = draws))
+  })
+}
+```
+
+```{r mod-062}
+SEMILLAS <- UNIDADES |>
+  group_by(experiment_id, replicate) |>
+  summarise(mean = mean(f1_positive), std = sd(f1_positive), .groups = "drop")
+IC <- if (!RECALCULAR_COSTOSO) leer_tabla("ic_f1_condicional.csv") else conditional_f1_intervals(PRINCIPAL)
+vista <- REPRESENTANTES |>
+  select(model, experiment_id, f1_positive_mean, f1_positive_std) |>
+  inner_join(SEMILLAS |>
+               select(experiment_id, replicate, mean) |>
+               pivot_wider(names_from = replicate, values_from = mean, names_prefix = "F1 semilla "),
+             by = "experiment_id") |>
+  inner_join(IC |> filter(scope == "conditional_mean") |> select(experiment_id, low, high), by = "experiment_id")
+tabla(select(vista, -experiment_id))
+```
+
+```{r mod-062-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-062")
+```
+
+**Interpretación.** La DS externa resume cinco folds de una realización; las columnas por semilla resumen variación algorítmica sobre los mismos folds. `low` y `high` delimitan IC condicionales del 95 %. Solapamiento o separación visual no constituye un contraste pareado válido. Los empates entre optimizadores en espacios agotados pueden coexistir con cambios entre realizaciones, debido a modelo o remuestreo.
+
+## 2. Comparación de métodos de optimización {-}
+
+### 2.1 Calidad interna a igual presupuesto y convergencia {-}
+
+Se emparejan búsquedas por modelo, balanceo, realización y fold. A 8, 16 y 24 evaluaciones se compara el mejor F1 interno acumulado y el tiempo con Grid. Son 420 comparaciones por optimizador y presupuesto. Esta lectura responde a eficiencia de búsqueda; no reemplaza las métricas externas ya presentadas.
+
+```{r mod-065}
+TRAZAS <- leer_tabla("anytime.csv")
+keys <- c("model", "balance", "replicate", "outer_fold", "evaluation")
+grid <- TRAZAS |> filter(optimizer == "grid") |> select(all_of(keys), best_inner_f1, seconds)
+comparacion <- inner_join(TRAZAS, grid, by = keys, suffix = c("", "_grid")) |>
+  mutate(gain_f1_vs_grid = best_inner_f1 - best_inner_f1_grid,
+         time_ratio_vs_grid = seconds / seconds_grid)
+EFICIENCIA <- comparacion |>
+  filter(evaluation %in% c(8, 16, 24)) |>
+  group_by(optimizer, evaluation) |>
+  summarise(mean_f1_gain = mean(gain_f1_vs_grid), median_time_ratio = median(time_ratio_vs_grid),
+            fraction_higher = mean(gain_f1_vs_grid > 1e-12), comparisons = n(), .groups = "drop")
+tabla(EFICIENCIA)
+```
+
+```{r mod-065-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-065")
+```
+
+**Interpretación.** A ocho evaluaciones, TPE, Genético y Random aventajan descriptivamente a Grid en F1 interno medio en 0,00685, 0,00632 y 0,00656. A 24, las diferencias son 0,00035, −0,00005 y −0,00033, con razones medianas de tiempo próximas a uno. No se observa una ventaja universal de calidad o velocidad. El orden de Grid, los rangos continuos y el agotamiento de dominios finitos condicionan la comparación; estos deltas internos no son ganancias de generalización.
+
+```{r mod-067}
+grafico_anytime <- function(por_tiempo = FALSE) {
+  # Resume el mejor F1 interno por evaluación y luego por familia.
+  series <- TRAZAS |>
+    group_by(model, balance, optimizer, evaluation) |>
+    summarise(f1 = mean(best_inner_f1), seconds = mean(seconds), .groups = "drop") |>
+    group_by(model, optimizer, evaluation) |>
+    summarise(f1 = mean(f1), seconds = mean(seconds), .groups = "drop")
+  ggplot(series, aes(if (por_tiempo) seconds else evaluation, f1, colour = optimizer)) +
+    geom_line() +
+    facet_wrap(~model, nrow = 2, scales = "free") +
+    labs(x = if (por_tiempo) "Tiempo acumulado (s)" else "Evaluaciones únicas", y = "Mejor F1 interno") +
+    theme_minimal() +
+    theme(legend.position = c(0.88, 0.25))
+}
+```
+
+```{r mod-068}
+grafico_anytime()
+```
+
+```{r mod-068-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-068")
+```
+
+**Interpretación.** Cada trayectoria muestra el mejor F1 interno medio acumulado por familia y evaluaciones únicas. Las subidas indican que se encontró un candidato interno mejor; una meseta significa ausencia de mejora dentro del presupuesto visitado. En dominios finitos agotados, el mismo resultado final no distingue eficiencia temprana ni prueba equivalencia de los algoritmos en otros espacios.
+
+```{r mod-070}
+grafico_anytime(por_tiempo = TRUE)
+```
+
+```{r mod-070-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-070")
+```
+
+**Interpretación.** El eje temporal permite observar el coste de alcanzar los valores internos, que varía entre familias. Las trayectorias combinan búsquedas emparejadas pero no forman un experimento con presupuestos temporales iguales. La carga del equipo y los hiperparámetros influyen en los tiempos; no se atribuye causalmente a un optimizador cualquier separación visual.
+
+#### Diversidad del algoritmo genético {-}
+
+Se registró la fracción de genotipos únicos y la distancia normalizada entre individuos. En genes continuos se usa distancia en su representación normalizada y en categorías discrepancia entre índices. Estas medidas detectan pérdida de diversidad sin evaluar otra vez los modelos.
+
+```{r mod-073}
+DIVERSIDAD <- leer_tabla("diversidad.csv") |>
+  mutate(model = str_split_i(experiment_id, "__", 1))
+div <- DIVERSIDAD |>
+  group_by(model, generation) |>
+  summarise(unique_fraction = mean(unique_fraction), mean_distance = mean(mean_normalized_distance),
+            searches = n(), .groups = "drop")
+div |>
+  pivot_longer(c(unique_fraction, mean_distance), names_to = "medida") |>
+  mutate(medida = recode(medida, unique_fraction = "Fracción única", mean_distance = "Distancia normalizada")) |>
+  ggplot(aes(generation, value, colour = medida)) +
+  geom_line() +
+  facet_wrap(~model, nrow = 2) +
+  coord_cartesian(ylim = c(0, 1.05)) +
+  labs(x = "Generación", y = "Diversidad", colour = NULL) +
+  theme_minimal() +
+  theme(legend.position = c(0.88, 0.25))
+```
+
+```{r mod-073-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-073")
+```
+
+**Interpretación.** La fracción única y la distancia describen aspectos diferentes: individuos distintos pueden estar cerca en el espacio genético. Elitismo conserva el mejor fitness; mutación y el inmigrante de rescate permiten introducir novedad. Las medias por generación incluyen solo búsquedas que llegaron a esa generación, de modo que no se interpretan como una única población longitudinal ni como evidencia de convergencia global.
+
+### 2.2 Presupuesto y coste empírico {-}
+
+Las 40.320 evaluaciones de candidatos requirieron 120.960 ajustes internos. Se añadieron 1.680 reajustes externos y 6.720 ajustes de la rama calibrada: 129.360 ajustes lógicos oficiales. Los 219 ajustes posteriores de modelos finales y los benchmarks auxiliares se contabilizan aparte; no amplían las 112 configuraciones ni sus 1.680 resultados externos.
+
+Los tiempos de búsqueda, reajuste y predicción se registraron por separado. La suma de tiempos de búsqueda no es necesariamente el tiempo de calendario de la sesión completa: excluye pausas y parte de gestión de archivos. RSS es memoria muestreada del proceso y sus hijos, no memoria incremental exclusiva de cada algoritmo.
+
+```{r mod-076}
+COSTE <- UNIDADES |>
+  group_by(model, optimizer) |>
+  summarise(search_mean = mean(search_seconds), search_std = sd(search_seconds),
+            refit_mean = mean(refit_seconds), inference_mean = mean(predict_seconds),
+            rss_mean_mib = mean(rss_peak_mib), evaluations = sum(evaluations), proposals = sum(proposals),
+            .groups = "drop") |>
+  mutate(seconds_per_evaluation = search_mean / 24)
+tabla(COSTE)
+```
+
+```{r mod-076-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-076")
+```
+
+**Interpretación.** `search_mean` y `search_std` describen tiempos por búsqueda; `seconds_per_evaluation` distribuye el tiempo medio entre 24 evaluaciones únicas. `evaluations` cuenta ajustes de candidatos, mientras `proposals` incluye intentos repetidos, por lo que no son sinónimos. Las diferencias reflejan familia, capacidad y coste de propuestas; un mayor tiempo no implica mejor clasificación. El tiempo de inferencia corresponde al bloque externo evaluado, no a una sola consulta.
+
+### 2.3 Complejidad asintótica y contraste con mediciones {-}
+
+En las expresiones siguientes, $n$ es el tamaño efectivo después de balancear, $p$ las columnas transformadas, $T$ árboles, $h$ profundidad, $B$ bins, $L$ hojas, $m$ variables candidatas por nodo, $I$ iteraciones y $n_{sv}$ vectores soporte. Las cotas describen operaciones bajo supuestos explícitos; no son tiempos garantizados.
+
+El Pipeline añade transformaciones de orden $O(np)$ y el remuestreo añade búsqueda de vecinos y generación sintética. La validación multiplica estos costes por candidatos y folds. La comparación empírica usa los mismos procedimientos reales, sin inferir exponentes a partir de un solo tamaño del dataset.
+
+```{r mod-079}
+# Las cotas son expresiones teóricas, no estimaciones ajustadas a los tiempos.
+COMPLEJIDAD <- tribble(
+  ~model, ~training_O, ~prediction_O, ~memory_O, ~assumptions,
+  "knn", "O(np) almacenamiento/validación", "O(np + n log k) por consulta con selección heap conservadora", "O(np)", "brute; no se usaron índices ni vecinos aproximados",
+  "naive_bayes", "O(np)", "O(p) por consulta y dos clases", "O(p), además de los datos", "Estadísticas por clase; partial_fit no fue necesario",
+  "logistic", "O(I np), aproximación por barridos; liblinear depende de problema primal/dual y tolerancia", "O(p)", "O(np) con matriz densa", "I efectivo depende de condicionamiento; no se atribuye la complejidad de SAGA",
+  "decision_tree", "O(p n log n) típico balanceado; O(p n²) cota degenerada", "O(h)", "O(nodos)", "h: profundidad; el caso balanceado no es garantía universal",
+  "random_forest", "O(T m n log n) típico; m variables candidatas", "O(T h)", "O(T nodos)", "T árboles; suma de costes, no mejora asintótica por paralelizar",
+  "xgboost", "O(T [n p h + p B L]) esquema de histogramas, más discretización inicial", "O(T h)", "O(np + p B L + T L)", "B bins, L hojas; esquema de operaciones, depende de reutilización de histogramas",
+  "svm", "Entre O(n²p) y O(n³p) como referencia del solver kernel, dependiente de datos/tolerancia", "O(n_sv p)", "Caché kernel acotada + O(n_sv p)", "n_sv vectores soporte; no se sustituyó RBF por un clasificador lineal"
+)
+tabla(COMPLEJIDAD)
+```
+
+```{r mod-079-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-079")
+```
+
+**Interpretación.** KNN desplaza buena parte del coste a la consulta; GaussianNB y Logística tienen inferencia proporcional a p; árboles dependen de profundidad; ensambles acumulan el coste de árboles. SVM RBF depende también del número de soportes y de la convergencia del solver. Paralelizar puede reducir tiempo de pared, pero no cambia estas cotas de trabajo. No se sustituyó KNN por vecinos aproximados ni SVM por un modelo lineal para acelerar.
+
+```{r mod-081}
+EMPIRICO <- UNIDADES |>
+  group_by(model) |>
+  summarise(refit_seconds = mean(refit_seconds), predict_seconds = mean(predict_seconds),
+            rss_mib = mean(rss_peak_mib), n_effective = mean(n_effective), p = mean(p))
+tabla(EMPIRICO)
+```
+
+```{r mod-081-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-081")
+```
+
+**Interpretación.** Los reajustes medios de Random Forest (≈1,031 s) y SVM (≈0,778 s) superan los de GaussianNB (≈0,096 s), mientras SVM y KNN presentan mayor coste de predicción de bloque (≈0,498 y ≈0,205 s). Es compatible con sus operaciones, pero no verifica una ley de escalado: se mezclan hiperparámetros y tamaños tras balanceo. No se realizaron curvas al variar n y p; esa extensión es opcional y no se reemplaza por exponentes inventados.
+
+### 2.4 Paralelización, profiling y mejora de la ejecución {-}
+
+El equipo utilizó CPU Intel Core Ultra 5 125H, 14 núcleos y 18 hilos lógicos, con aproximadamente 8 GB de RAM y sin GPU NVIDIA CUDA disponible. Se limitó el paralelismo a un nivel: hasta dos folds internos, estimadores e hilos numéricos acotados, y fallback serial si había menos de 1,5 GiB libres. Esto evita sobreasignación y presión de memoria; no se atribuye una aceleración GPU no medida.
+
+El benchmark ya ejecutado repitió tres veces por familia un candidato fijado por selección interna, comparando solicitud de uno y dos trabajadores. Se exigió igualdad de F1 interno. El modo de dos trabajadores solicitados no garantiza dos trabajadores efectivos.
+
+```{r mod-084}
+BENCH <- leer_tabla("benchmark_ejecucion.csv")
+BENCH_RESUMEN <- BENCH |>
+  group_by(model, requested_jobs) |>
+  summarise(effective_jobs = max(effective_jobs), total_seconds = mean(total_seconds),
+            total_std = sd(total_seconds), training_seconds = mean(training_seconds_sum),
+            inference_seconds = mean(inference_seconds_sum), rss_mib = mean(rss_peak_mib),
+            f1_inner = mean(f1_inner), .groups = "drop")
+tabla(BENCH_RESUMEN)
+```
+
+```{r mod-084-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-084")
+```
+
+**Interpretación.** La política de memoria activó un trabajador también cuando se solicitaron dos. Los F1 internos son iguales, pero estos tiempos no demuestran speedup por paralelismo. Se documenta la restricción en lugar de atribuir a concurrencia una diferencia de medición. Tres repeticiones permiten observar variación temporal local, no generalizar a otro hardware.
+
+```{r mod-086}
+# Se conserva la medición histórica: volver a perfilar requeriría otro ajuste.
+perfil <- read_file(file.path(ANALISIS, "perfil_logistica.txt"))
+perfil <- str_replace_all(perfil, "[A-Za-z]:\\\\.*?\\\\site-packages\\\\", "site-packages/")
+cat(head(str_split_1(perfil, "\n"), 19), sep = "\n")
+```
+
+```{r mod-086-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-086")
+```
+
+**Interpretación.** El caso perfilado de Logística registró 0,063 s, con aproximadamente 0,041 s acumulados en preparación interna del Pipeline y 0,020 s en el adaptador de ajuste. Los tiempos acumulados incluyen llamadas anidadas y no deben sumarse como categorías independientes. Es un caso auxiliar, no una estimación del coste total de los 112 experimentos.
+
+La lentitud creciente de la corrida se diagnosticó aparte como relectura y comprobación reiterada de todos los artefactos ya completados. Una caché administrativa verificó integralmente al iniciar y cerrar cada proceso y comprobó sellos entre bloques. En una prueba emparejada de doce unidades, la consulta pasó de 0,230 s a 0,029 s (8,08×) con resultados idénticos. Ese factor solo corresponde al registro, no al entrenamiento completo. Se mantuvieron presupuestos, semillas, checkpoints y lógica de evaluación; no se compartieron ajustes entre optimizadores.
+
+## 3. Resultados finales, comparación estadística e interpretabilidad {-}
+
+### 3.1 Comparación jerárquica con alcance exploratorio {-}
+
+Se conserva la secuencia Friedman → Nemenyi → Diagrama de Diferencia Crítica → comparaciones dirigidas de AUC → tamaños del efecto. La matriz de entrada tiene cinco filas (folds externos de la realización 0) y 112 columnas (configuraciones), evaluadas sobre las mismas particiones.
+
+Los entrenamientos de folds externos se solapan y proceden de un solo dataset. Por tanto, no son bloques de datasets independientes. Las realizaciones algorítmicas tampoco añaden independencia. Friedman, Nemenyi y CD se interpretan exclusivamente de forma exploratoria, con limitaciones adicionales de aproximación asintótica al disponer de cinco bloques. Se mantiene el procedimiento requerido sin convertir sus p-valores en confirmación de superioridad.
+
+Friedman utiliza rangos por fold y promedia empates. Se reporta W de Kendall como concordancia descriptiva del orden relativo, no como ganancia de F1 ni efecto de una intervención.
+
+```{r mod-089}
+ESTADISTICA <- file.path(ANALISIS, "estadistica")
+MATRIZ <- PRINCIPAL |>
+  select(outer_fold, experiment_id, f1_positive) |>
+  pivot_wider(names_from = experiment_id, values_from = f1_positive) |>
+  arrange(outer_fold) |>
+  select(-outer_fold) |>
+  select(order(colnames(.data))) |>
+  as.matrix()
+RANGOS <- t(apply(-MATRIZ, 1, rank, ties.method = "average"))
+RANGOS_MEDIOS <- sort(colMeans(RANGOS), method = "radix")
+prueba <- friedman.test(MATRIZ)
+n <- nrow(MATRIZ); k <- ncol(MATRIZ)
+friedman <- tibble(statistic = unname(prueba$statistic), df = k - 1, p_exploratory = prueba$p.value,
+                   blocks = n, treatments = k, kendall_W = unname(prueba$statistic) / (n * (k - 1)))
+original <- fromJSON(file.path(ESTADISTICA, "friedman.json"))
+stopifnot(isTRUE(all.equal(friedman$statistic, original$statistic, tolerance = 1e-12)))
+tabla(friedman, decimales = 8)
+```
+
+```{r mod-089-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-089")
+```
+
+**Interpretación.** Friedman produjo χ²=422,2858, gl=111 y p exploratorio=7,72×10⁻³⁸; W=0,7609 indica concordancia del orden bajo este resumen. El valor nominal activa el post-hoc dentro de la secuencia exploratoria. La dependencia entre folds impide tratarlo como rechazo confirmatorio obtenido de 112 métodos sobre datasets independientes.
+
+```{r mod-091}
+tabla(head(tibble(experiment_id = names(RANGOS_MEDIOS), mean_rank = unname(RANGOS_MEDIOS)), 12))
+```
+
+```{r mod-091-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-091")
+```
+
+**Interpretación.** XGBoost–SMOTE–Random tiene el menor rango medio (15,0), seguido de Logística–SMOTE–Grid (15,6). Random Forest–SMOTE alcanza el mayor F1 medio, pero su rango medio es 16,1. No hay contradicción: promediar magnitudes y promediar posiciones responde a resúmenes diferentes. Esta tabla conserva evidencia descriptiva aun cuando la inferencia confirmatoria no es justificable.
+
+#### Nemenyi y diferencia crítica {-}
+
+Nemenyi compara diferencias absolutas entre rangos medios usando el rango studentizado para 112 tratamientos y cinco bloques. Su referencia ya considera comparaciones simultáneas; no se añade Holm a estos mismos p-valores. Se conserva la formulación clásica sin corrección adicional de empates, contrastada numéricamente con la implementación de referencia.
+
+La diferencia crítica exploratoria fue 89,3721. Entre 6.216 pares, 31 quedaron bajo el umbral nominal 0,05. Estos pares no son descubrimientos confirmatorios. En el diagrama, las barras conectan grupos de ausencia de rechazo bajo esa aproximación, no grupos de equivalencia práctica.
+
+```{r mod-094}
+nemenyi <- function(rangos) {
+  # P-valores conjuntos de Nemenyi; interpretación exclusivamente exploratoria.
+  n <- nrow(rangos); k <- ncol(rangos); means <- colMeans(rangos)
+  standard <- sqrt(k * (k + 1) / (6 * n))
+  q <- abs(outer(means, means, "-")) / standard * sqrt(2)
+  p <- ptukey(q, nmeans = k, df = Inf, lower.tail = FALSE); diag(p) <- 1
+  p
+}
+
+# La matriz conjunta está guardada; los rangos se reconstruyeron arriba.
+NEMENYI <- leer_tabla("estadistica/nemenyi_p_exploratorios.csv") |> tibble::column_to_rownames("...1")
+CD <- qtukey(0.95, nmeans = k, df = Inf) / sqrt(2) * sqrt(k * (k + 1) / (6 * n))
+stopifnot(isTRUE(all.equal(CD, fromJSON(file.path(ESTADISTICA, "nemenyi_estado.json"))$critical_difference)))
+```
+
+```{r mod-095}
+names_ <- names(RANGOS_MEDIOS); ranks <- unname(RANGOS_MEDIOS); cd <- CD
+# Ventanas maximales de rangos cuyo diámetro no supera CD. Cada par dentro
+# de una barra tiene p>=.05; pertenecer a una barra no acredita equivalencia.
+groups <- list()
+for (i in seq_len(k)) {
+  j <- findInterval(ranks[i] + cd, ranks)
+  if (j > i && !any(map_lgl(groups, ~ .x[1] <= i && .x[2] >= j))) groups[[length(groups) + 1]] <- c(i, j)
+}
+groups <- keep(groups, function(g) !any(map_lgl(groups, ~ .x[1] <= g[1] && .x[2] >= g[2] && !identical(.x, g))))
+offset <- 2 + length(groups) * 0.18
+half <- (k + 1) %/% 2
+etiquetas <- tibble(name = names_, rank = ranks, i = seq_len(k) - 1) |>
+  mutate(left = i < half, row = if_else(left, i, k - 1 - i), y = -offset - row * 0.75,
+         end = if_else(left, -3, k + 3))
+barras <- map_dfr(seq_along(groups), ~ tibble(x = ranks[groups[[.x]][1]], xend = ranks[groups[[.x]][2]],
+                                               y = -0.35 - (.x - 1) * 0.18))
+ggplot() +
+  annotate("segment", x = 1, xend = k, y = 0, yend = 0) +
+  annotate("segment", x = seq(1, k, 10), xend = seq(1, k, 10), y = 0, yend = 0.2) +
+  annotate("text", x = seq(1, k, 10), y = 0.4, label = seq(1, k, 10), size = 3) +
+  annotate("segment", x = 1, xend = 1 + cd, y = 2, yend = 2, linewidth = 1.2, colour = "#a13b26") +
+  annotate("text", x = 1, y = 2.4, label = sprintf("CD exploratoria = %.2f", cd), hjust = 0, size = 4) +
+  geom_segment(data = barras, aes(x = x, xend = xend, y = y, yend = y), linewidth = 0.8, colour = "#387b8d", alpha = 0.7) +
+  geom_segment(data = etiquetas, aes(x = rank, xend = rank, y = 0, yend = y), linewidth = 0.2, colour = "gray") +
+  geom_segment(data = etiquetas, aes(x = rank, xend = end, y = y, yend = y), linewidth = 0.2, colour = "gray") +
+  geom_point(data = etiquetas, aes(rank, 0), size = 0.8, colour = "#1c4f74") +
+  geom_text(data = etiquetas, aes(end, y, label = sprintf("%s (%.1f)", name, rank), hjust = if_else(left, 1, 0)), size = 2.6) +
+  coord_cartesian(xlim = c(-65, k + 65), ylim = c(-offset - half * 0.75 - 1, 5)) +
+  labs(title = "Diagrama de Diferencia Crítica · 112 configuraciones\nEXPLORATORIO: cinco folds dependientes de un solo dataset",
+       caption = "Las barras agrupan ausencia de rechazo bajo la aproximación de Nemenyi. No prueban equivalencia ni superioridad confirmatoria.") +
+  theme_void() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16), plot.caption = element_text(hjust = 0.5, size = 10))
+```
+
+```{r mod-095-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-095")
+```
+
+**Interpretación.** La CD es grande respecto del rango posible, por lo que solo separaciones extremas aparecen bajo el umbral nominal. Las mejores configuraciones quedan conectadas con muchas alternativas. Las barras no prueban igualdad y los 31 pares nominales no justifican afirmaciones confirmatorias con folds dependientes. Se conserva el universo completo de 112 configuraciones en el diagrama.
+
+```{r mod-097}
+finalistas <- fromJSON(file.path(ESTADISTICA, "fase6_control.json"), simplifyVector = FALSE)$finalists
+ids_finalistas <- map_chr(finalistas, "experiment_id")
+efectos <- combn(ids_finalistas, 2, simplify = FALSE) |>
+  map_dfr(function(par) {
+    delta <- MATRIZ[, par[1]] - MATRIZ[, par[2]]
+    tibble(a = par[1], b = par[2], mean_delta_f1 = mean(delta), sd_delta_f1 = sd(delta),
+           folds_a_higher = sum(delta > 0), folds = 5L)
+  })
+tabla(efectos)
+```
+
+```{r mod-097-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-097")
+```
+
+**Interpretación.** Las diferencias de F1 se calculan emparejando folds de cada par, no tratando sus resultados como dos muestras independientes. La diferencia media RF–SMOTE frente a XGBoost–SMOTE–Random es aproximadamente 0,00043. Es pequeña y no basta para afirmar relevancia práctica; la DS de diferencias describe dispersión, no un error estándar que pueda calcularse suponiendo independencia. No se utiliza Cliff como si los folds formaran muestras independientes.
+
+#### Modelos finales y procedencia de las comparaciones dirigidas {-}
+
+Se congelaron las tres familias de mayor F1 medio externo, con desempate por identificador, antes de consultar el test histórico: Random Forest–SMOTE–TPE, XGBoost–SMOTE–Random y Logística–SMOTE–Grid. Los cuatro optimizadores de RF–SMOTE empataron; elegir TPE por identificador no implica una ventaja suya.
+
+Para cada configuración se realizó una selección de parámetros con tres folds internos en todo desarrollo y 24 evaluaciones, seguida de un ajuste final. Son 219 ajustes adicionales ya guardados (3 × [24 × 3 + 1]). No se reutilizó el modelo de un fold externo por haber obtenido el mejor resultado. Los modelos finales quedaron persistidos antes de leer el test para esta comparación. Las celdas presentes solo recuperan sus registros.
+
+```{r mod-100}
+finalistas <- fromJSON(file.path(ESTADISTICA, "fase6_control.json"), simplifyVector = FALSE)$finalists
+filas <- map_dfr(finalistas, function(spec) {
+  registro <- fromJSON(file.path(ANALISIS, "finalistas", spec$experiment_id, "complete.json"), simplifyVector = FALSE)
+  tibble(Configuración = spec$experiment_id,
+         `Parámetros finales` = as.character(toJSON(registro$params, auto_unbox = TRUE)),
+         `F1 selección interna final` = registro$search$best_inner_f1)
+})
+tabla(filas)
+```
+
+```{r mod-100-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-100")
+```
+
+**Interpretación.** Estos parámetros pertenecen al ajuste final sobre desarrollo completo, no a una selección retrospectiva por el test. Su F1 de selección sigue siendo interno y no reemplaza el resultado externo medio. La búsqueda adicional no modifica ninguno de los resultados oficiales conservados.
+
+```{r mod-102}
+PRED_TEST <- set_names(map(ids_finalistas, ~ leer_tabla(file.path("finalistas", .x, "test_predictions.csv"))), ids_finalistas)
+METRICAS_TEST <- imap_dfr(PRED_TEST, function(pred, eid) {
+  as_tibble(c(list(experiment_id = eid), metricas_predicciones(pred$y_true, pred$y_pred, pred$score, pred$probability)))
+})
+tabla(select(METRICAS_TEST, experiment_id, all_of(METRICAS)))
+```
+
+```{r mod-102-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-102")
+```
+
+**Interpretación.** En el test histórico, XGBoost obtuvo F1=0,6370, RF=0,6271 y Logística=0,6246; RF tuvo AUC=0,84384, frente a 0,84212 y 0,84247. El orden de F1 difiere del máximo externo de desarrollo y no se usa para seleccionar otro ganador. Logística detecta más abandonos (Recall≈0,7941), con menor Precision (≈0,5147). El test ya estaba expuesto: estos resultados son suplementarios, no confirmación externa nueva.
+
+#### DeLong dirigido, corrección múltiple e incertidumbre {-}
+
+DeLong se aplicó únicamente a los scores de los tres modelos fijos sobre los mismos 1.409 clientes del test histórico. No se aplicó a predicciones OOF de modelos diferentes por fold. Se calcularon componentes U-estadísticos con aportación 0,5 de los empates, covarianza pareada, diferencia de AUC y estadístico normal z. Para esta aproximación no se atribuyen grados de libertad de una t.
+
+Se predefinió la familia de tres pares y se aplicó Holm a sus p-valores. El cálculo condicional supone clientes IID; no demuestra ese supuesto ni elimina exposición histórica o selección previa. Su alcance es suplementario y exploratorio.
+
+Los IC ya calculados utilizan 2.000 remuestreos pareados estratificados de clientes, conservando los mismos índices para todos los modelos. Son IC percentiles marginales del 95 %, condicionales a modelos y prevalencia, no simultáneos ni incertidumbre completa de entrenamiento. La asimetría bootstrap de métricas fue pequeña (|asimetría|<0,18); se mantuvo percentil en lugar de BCa. Las diferencias absolutas de AUC, F1 y Recall constituyen tamaños de efecto directamente interpretables en la escala de las métricas.
+
+```{r mod-105}
+delong_covariance <- function(y, scores) {
+  # AUC y covarianza pareada de DeLong mediante componentes U-estadísticos.
+  stopifnot(is.matrix(scores), ncol(scores) == length(y), all(is.finite(scores)))
+  m <- sum(y == 1); n <- sum(y == 0); stopifnot(min(m, n) > 1)
+  componentes <- map(seq_len(nrow(scores)), function(i) {
+    s <- scores[i, ]; positive <- s[y == 1]; negative <- s[y == 0]
+    concordance <- outer(positive, negative, ">") + 0.5 * outer(positive, negative, "==")
+    list(v10 = rowMeans(concordance), v01 = colMeans(concordance), auc = mean(concordance))
+  })
+  v10 <- sapply(componentes, `[[`, "v10"); v01 <- sapply(componentes, `[[`, "v01")
+  covariance <- cov(v10) / m + cov(v01) / n
+  list(auc = map_dbl(componentes, "auc"), covariance = covariance)
+}
+
+holm <- function(pvalues) {
+  # Ajuste escalonado de Holm para la familia predefinida de tres pares.
+  p.adjust(pvalues, method = "holm")
+}
+```
+
+```{r mod-106}
+library(reticulate)   # lectura del archivo NumPy (.npz) con las muestras bootstrap guardadas
+names_ <- names(PRED_TEST); y <- PRED_TEST[[1]]$y_true
+for (pred in PRED_TEST) stopifnot(identical(pred$y_true, y))
+dl <- delong_covariance(y, do.call(rbind, map(PRED_TEST, "score")))
+auc <- dl$auc; cov_ <- dl$covariance
+bootstrap <- import("numpy")$load(file.path(ESTADISTICA, "bootstrap_test_pareado.npz"))
+stopifnot(identical(as.character(bootstrap[["names"]]), names_))
+samples <- bootstrap[["samples"]]
+metricas_test <- tibble::column_to_rownames(METRICAS_TEST, "experiment_id")
+DELONG <- combn(seq_along(names_), 2, simplify = FALSE) |>
+  map_dfr(function(par) {
+    i <- par[1]; j <- par[2]
+    delta <- auc[i] - auc[j]; se <- sqrt(cov_[i, i] + cov_[j, j] - 2 * cov_[i, j]); z <- delta / se
+    row <- tibble(a = names_[i], b = names_[j], delta_auc = delta, z = z, p_raw = 2 * pnorm(abs(z), lower.tail = FALSE))
+    for (q in 1:3) {
+      metric <- c("f1", "recall", "auc")[q]
+      ic <- quantile(samples[, i, q] - samples[, j, q], c(0.025, 0.975))
+      row[[paste0(metric, "_bootstrap_low")]] <- ic[[1]]; row[[paste0(metric, "_bootstrap_high")]] <- ic[[2]]
+      if (metric != "auc") {
+        field <- if (metric == "f1") "f1_positive" else "recall_positive"
+        row[[paste0("delta_", metric)]] <- metricas_test[names_[i], field] - metricas_test[names_[j], field]
+      }
+    }
+    row
+  }) |>
+  mutate(p_holm = holm(p_raw))
+referencia <- leer_tabla("estadistica/delong_holm.csv")
+stopifnot(isTRUE(all.equal(as.matrix(select(DELONG, delta_auc, z, p_raw, p_holm)),
+                           as.matrix(select(referencia, delta_auc, z, p_raw, p_holm)), tolerance = 1e-12, check.attributes = FALSE)))
+tabla(select(DELONG, a, b, delta_auc, z, p_raw, p_holm, auc_bootstrap_low, auc_bootstrap_high))
+```
+
+```{r mod-106-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-106")
+```
+
+**Interpretación.** Los tres p ajustados son 1,0 y los IC de diferencia AUC incluyen cero. No se detectan diferencias con este procedimiento; no se prueba equivalencia. Para RF–XGBoost, ΔAUC≈0,00171 e IC bootstrap≈[−0,00337; 0,00695] muestran que el cambio observado es pequeño e incierto. Holm controla la familia dirigida bajo sus supuestos, pero no corrige la exposición histórica del test ni la selección previa entre configuraciones.
+
+```{r mod-108}
+tabla(select(DELONG, a, b, delta_f1, f1_bootstrap_low, f1_bootstrap_high, delta_recall, recall_bootstrap_low, recall_bootstrap_high))
+```
+
+```{r mod-108-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-108")
+```
+
+**Interpretación.** RF–XGBoost tiene ΔF1≈−0,00983 con IC que incluye cero y ΔRecall≈−0,02941, cuyo IC condicional es negativo. Esto describe un intercambio de detección para modelos fijos; no constituye un contraste simultáneo confirmatorio sobre todas las métricas. Se muestran también efectos desfavorables, sin transformar significancia nominal o ausencia de rechazo en superioridad práctica.
+
+```{r mod-110}
+remuestreo_pareado <- function(y, scores, labels, draws = 2000) {
+  # Bootstrap estratificado: mismos clientes remuestreados para cada modelo.
+  set.seed(42107)
+  pos <- which(y == 1); neg <- which(y == 0)
+  samples <- array(NA_real_, dim = c(draws, nrow(scores), 3))
+  for (b in seq_len(draws)) {
+    ix <- c(sample(pos, length(pos), replace = TRUE), sample(neg, length(neg), replace = TRUE))
+    truth <- y[ix]
+    for (j in seq_len(nrow(scores))) {
+      lab <- labels[j, ix]; tp <- sum(lab == 1 & truth == 1); fp <- sum(lab == 1 & truth == 0)
+      samples[b, j, ] <- c(2 * tp / (length(pos) + tp + fp), tp / length(pos),
+                           roc_auc_vec(factor(truth, levels = c(1, 0)), scores[j, ix]))
+    }
+  }
+  samples
+}
+# Se reutiliza samples del NPZ: no se vuelve a llamar a remuestreo_pareado.
+```
+
+```{r mod-111}
+intervalos <- expand_grid(j = seq_along(names_), q = 1:3) |>
+  pmap_dfr(function(j, q) {
+    muestra <- samples[, j, q]
+    tibble(experiment_id = names_[j], metric = c("f1", "recall", "auc")[q],
+           low = quantile(muestra, 0.025), high = quantile(muestra, 0.975),
+           bootstrap_skewness = moments::skewness(muestra), draws = dim(samples)[1])
+  })
+tabla(intervalos)
+```
+
+```{r mod-111-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-111")
+```
+
+**Interpretación.** Los intervalos cuantifican variación por remuestrear clientes del test manteniendo fijos los modelos. Sus anchuras recuerdan la incertidumbre que no muestran los valores puntuales; no incorporan variabilidad de selección o reentrenamiento. La asimetría observada respalda usar percentiles para este estimando, sin afirmar cobertura incondicional de todo el procedimiento experimental.
+
+### 3.2 Interpretabilidad global y local: SHAP y LIME {-}
+
+Se explican el candidato RF–SMOTE y XGBoost–SMOTE–Random. La selección procede del ranking externo exploratorio y de la comparación dirigida; no se afirma que exista un ganador confirmado ni se ejecutan explicaciones sobre las 112 configuraciones.
+
+SHAP. TreeSHAP interventional explica la probabilidad nativa positiva del modelo final. El fondo contiene 100 clientes reales de desarrollo elegidos con semilla 42; el análisis global incluye los 5.634 clientes de desarrollo. Se explica el modelo sobre datos reales, no sobre clientes sintéticos. Se verificó que referencia más suma de contribuciones reproduce la probabilidad con tolerancia 10⁻⁵. Las columnas one-hot se agregaron por variable para resumir importancia; su suma no equivale a recalcular Shapley para otro juego de variables agrupadas.
+
+En RF se detectó un problema numérico de redondeo en la ruta interventional de SHAP 0.48.0. La copia de umbrales del explicador se representó mediante el mayor float32 menor o igual al umbral original; para entradas float32 conserva exactamente la comparación de scikit-learn. Se comprobó igualdad de probabilidades en desarrollo y test. No se modificó el modelo ni se corrigieron contribuciones a posteriori. Los bloques diagnósticos fallidos se conservaron separados de las explicaciones válidas.
+
+Selección local. Para cada modelo se seleccionaron un acierto y un error del test con máxima confianza, con desempate por índice. Esta regla predefinida permite inspeccionar también errores seguros; los cuatro casos no representan la distribución completa de errores.
+
+LIME. En las mismas observaciones y para la misma probabilidad nativa, se ajustó un sustituto local con 5.000 perturbaciones, diez variables explicativas y semillas 42, 43 y 44. Se reconstruyen las categorías originales antes de pasar perturbaciones por el Pipeline. Se guardan R² local ponderado, probabilidad aproximada y estabilidad de las cinco variables principales mediante Jaccard.
+
+SHAP usa variables transformadas, incluida AvgChargePerMonth; LIME usa variables originales. Sus coeficientes no son numéricamente intercambiables. Ambos pueden romper dependencias entre servicios e importes durante perturbaciones; las atribuciones describen el modelo y no identifican causas del abandono. Se explica la salida nativa, no la rama sigmoid.
+
+#### Random Forest: explicación global y casos locales {-}
+
+Las contribuciones se expresan en unidades de probabilidad respecto del fondo. El color del resumen representa el valor de la columna transformada; no cambia el signo de la contribución.
+
+```{r mod-115}
+library(reticulate)   # los pipelines finales se ajustaron en Python (scikit-learn) y se cargan sin reajustar
+library(shapviz)
+cloudpickle <- import("cloudpickle")
+np <- import("numpy")
+
+datos_explicacion <- function(eid) {
+  # Transforma datos con el Pipeline ya ajustado; no llama fit.
+  folder <- file.path(ANALISIS, "finalistas", eid)
+  registro <- fromJSON(file.path(folder, "complete.json"))
+  stopifnot(digest(file = file.path(folder, "pipeline.pkl"), algo = "sha256") == registro$pipeline_hash)
+  pipeline <- py_with(import_builtins()$open(file.path(folder, "pipeline.pkl"), "rb"), function(f) cloudpickle$load(f))
+  saved <- np$load(file.path(ANALISIS, "interpretabilidad", eid, "shap_global.npz"))
+  raw <- read_csv(file.path(ROOT, "WA_Fn-UseC_-Telco-Customer-Churn.csv"), show_col_types = FALSE,
+                  col_types = cols(.default = col_character(), SeniorCitizen = col_integer(),
+                                   tenure = col_integer(), MonthlyCharges = col_double()))[saved[["row_ids"]] + 1, ] |>
+    select(-customerID, -Churn)
+  pasos <- pipeline$named_steps
+  z <- py_to_r(pasos[["prep"]]$transform(pasos[["features"]]$transform(r_to_py(raw))))
+  list(pipeline = pipeline, raw = raw, z = as.matrix(z), saved = saved)
+}
+
+calcular_shap <- function(pipeline, z, background_positions) {
+  # Procedimiento original; solo necesario si no se conservaran las atribuciones.
+  shap <- import("shap")
+  estimator <- pipeline$named_steps[["classifier"]]$estimator_
+  if (class(estimator)[1] == "sklearn.ensemble._forest.RandomForestClassifier") storage.mode(z) <- "double"
+  explainer <- shap$TreeExplainer(estimator, data = z[background_positions, ],
+                                  feature_perturbation = "interventional", model_output = "probability")
+  values <- explainer$shap_values(z, check_additivity = FALSE)
+  if (length(dim(values)) == 3) values <- values[, , 2]
+  list(values = values, base = tail(as.numeric(explainer$expected_value), 1))
+}
+
+grafico_shap_global <- function(eid) {
+  # Dibuja el resumen a partir de atribuciones y valores transformados reales.
+  d <- datos_explicacion(eid)
+  values <- d$saved[["values"]]; base <- as.numeric(d$saved[["base"]])
+  stopifnot(identical(dim(values), dim(d$z)))
+  probabilidad <- py_to_r(d$pipeline$predict_proba(r_to_py(d$raw)))[, 2]
+  stopifnot(max(abs(base + rowSums(values) - probabilidad)) <= 1e-5)
+  colnames(values) <- colnames(d$z) <- as.character(d$saved[["feature_names"]])
+  sv_importance(shapviz(values, X = d$z, baseline = base), kind = "beeswarm", max_display = 20) +
+    ggtitle("SHAP global: probabilidad nativa de abandono")
+}
+
+grafico_shap_local <- function(eid, row_id) {
+  # Genera waterfall desde contribuciones locales guardadas.
+  folder <- file.path(ANALISIS, "interpretabilidad", eid)
+  data <- read_csv(file.path(folder, sprintf("shap_local_%s.csv", row_id)), show_col_types = FALSE)
+  base <- as.numeric(np$load(file.path(folder, "shap_global.npz"))[["base"]])
+  valores <- matrix(data$shap, nrow = 1, dimnames = list(NULL, data$feature))
+  sv_waterfall(shapviz(valores, X = as.data.frame(t(set_names(data$value, data$feature))), baseline = base),
+               max_display = 12)
+}
+
+calcular_lime <- function(pipeline, raw, observation, seed = 42) {
+  # Procedimiento original de LIME; las explicaciones de la entrega ya existen.
+  library(lime)
+  limpiar <- function(d) mutate(d, TotalCharges = replace_na(suppressWarnings(as.numeric(TotalCharges)), 0))
+  train <- limpiar(raw); obs <- limpiar(observation)
+  model_type.python.builtin.object <<- function(x, ...) "classification"
+  predict_model.python.builtin.object <<- function(x, newdata, type, ...) {
+    probabilidad <- py_to_r(x$predict_proba(r_to_py(newdata)))
+    data.frame(permanece = probabilidad[, 1], abandono = probabilidad[, 2])
+  }
+  set.seed(seed)
+  explainer <- lime(train, pipeline, bin_continuous = TRUE)
+  explain(obs, explainer, labels = "abandono", n_features = 10, n_permutations = 5000)
+}
+
+grafico_lime <- function(eid, row_id) {
+  # Traza los pesos del sustituto guardado, sin generar perturbaciones nuevas.
+  records <- fromJSON(file.path(ANALISIS, "interpretabilidad", eid, "lime_resultados.json"), simplifyVector = FALSE)
+  exp <- detect(records, ~ .x$row_id == row_id && .x$seed == 42)
+  pesos <- map_dfr(exp$weights, ~ tibble(label = .x[[1]], weight = .x[[2]])) |>
+    mutate(label = factor(label, levels = rev(label)))
+  ggplot(pesos, aes(weight, label, fill = weight > 0)) +
+    geom_col(show.legend = FALSE) +
+    scale_fill_manual(values = c(`TRUE` = "green", `FALSE` = "red")) +
+    labs(x = "Peso del sustituto local", y = NULL, title = "LIME: clase abandono") +
+    theme_minimal()
+}
+```
+
+```{r mod-115-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-115")
+```
+
+```{r mod-116}
+grafico_shap_global("random_forest__smote__bayesian_tpe")
+```
+
+```{r mod-116-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-116")
+```
+
+**Interpretación.** Las mayores importancias medias absolutas agrupadas corresponden a Contract (0.0771), InternetService (0.0694), tenure (0.0675). El resumen muestra variación y signo por cliente; una importancia absoluta alta no determina por sí sola dirección causal. El error máximo de aditividad fue 1.36e-08, inferior a 10⁻⁵ en las 5.634 observaciones. Estas explicaciones caracterizan el modelo final ajustado, no una medida de generalización adicional.
+
+Caso 4267: acierto de alta confianza. Clase observada=0; probabilidad nativa de abandono=0.0081. El identificador permite rastrear la observación sin volver a escoger un ejemplo.
+
+```{r mod-119}
+grafico_shap_local("random_forest__smote__bayesian_tpe", 4267)
+```
+
+```{r mod-119-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-119")
+```
+
+Interpretación SHAP. Las dos contribuciones negativas de mayor magnitud son cat__Contract_Two year (-0.1402), num__tenure (-0.0845); reducen la probabilidad respecto del fondo. La etiqueta predicha de permanencia coincide con lo observado. El caso ilustra una decisión correcta, sin implicar que esas variables garanticen permanencia.
+
+```{r mod-121}
+grafico_lime("random_forest__smote__bayesian_tpe", 4267)
+```
+
+```{r mod-121-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-121")
+```
+
+Interpretación LIME. La figura corresponde a semilla 42; el sustituto local aproxima 0.0867 frente a la probabilidad real 0.0081, con R² ponderado=0.3992. Entre tres semillas, R² varió de 0.3992 a 0.4090; el Jaccard medio del top 5 fue 0.778 y el error absoluto local máximo 0.0920. La estabilidad de variables no garantiza fidelidad de probabilidad. LIME describe una aproximación local, mientras SHAP conserva aditividad; no se exige que sus pesos coincidan.
+
+Caso 4386: error de alta confianza. Clase observada=1; probabilidad nativa de abandono=0.0153. El identificador permite rastrear la observación sin volver a escoger un ejemplo.
+
+```{r mod-124}
+grafico_shap_local("random_forest__smote__bayesian_tpe", 4386)
+```
+
+```{r mod-124-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-124")
+```
+
+Interpretación SHAP. Las dos contribuciones negativas de mayor magnitud son cat__Contract_Two year (-0.1130), num__tenure (-0.0626); reducen la probabilidad respecto del fondo. El cliente abandonó pese a recibir una probabilidad baja: es un falso negativo relevante para retención. Las atribuciones explican cómo se produjo la decisión equivocada; no justifican su corrección ni revelan por qué abandonó el cliente.
+
+```{r mod-126}
+grafico_lime("random_forest__smote__bayesian_tpe", 4386)
+```
+
+```{r mod-126-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-126")
+```
+
+Interpretación LIME. La figura corresponde a semilla 42; el sustituto local aproxima 0.0058 frente a la probabilidad real 0.0153, con R² ponderado=0.3384. Entre tres semillas, R² varió de 0.3329 a 0.3384; el Jaccard medio del top 5 fue 0.778 y el error absoluto local máximo 0.0140. La estabilidad de variables no garantiza fidelidad de probabilidad. LIME describe una aproximación local, mientras SHAP conserva aditividad; no se exige que sus pesos coincidan.
+
+#### XGBoost: explicación global y casos locales {-}
+
+Las contribuciones se expresan en unidades de probabilidad respecto del fondo. El color del resumen representa el valor de la columna transformada; no cambia el signo de la contribución.
+
+```{r mod-129}
+grafico_shap_global("xgboost__smote__random")
+```
+
+```{r mod-129-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-129")
+```
+
+**Interpretación.** Las mayores importancias medias absolutas agrupadas corresponden a Contract (0.1051), tenure (0.0927), InternetService (0.0733). El resumen muestra variación y signo por cliente; una importancia absoluta alta no determina por sí sola dirección causal. El error máximo de aditividad fue 1.75e-07, inferior a 10⁻⁵ en las 5.634 observaciones. Estas explicaciones caracterizan el modelo final ajustado, no una medida de generalización adicional.
+
+Caso 2221: acierto de alta confianza. Clase observada=0; probabilidad nativa de abandono=0.0116. El identificador permite rastrear la observación sin volver a escoger un ejemplo.
+
+```{r mod-132}
+grafico_shap_local("xgboost__smote__random", 2221)
+```
+
+```{r mod-132-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-132")
+```
+
+Interpretación SHAP. Las dos contribuciones negativas de mayor magnitud son cat__Contract_Two year (-0.1234), num__tenure (-0.1019); reducen la probabilidad respecto del fondo. La etiqueta predicha de permanencia coincide con lo observado. El caso ilustra una decisión correcta, sin implicar que esas variables garanticen permanencia.
+
+```{r mod-134}
+grafico_lime("xgboost__smote__random", 2221)
+```
+
+```{r mod-134-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-134")
+```
+
+Interpretación LIME. La figura corresponde a semilla 42; el sustituto local aproxima -0.1815 frente a la probabilidad real 0.0116, con R² ponderado=0.4424. Entre tres semillas, R² varió de 0.4406 a 0.4474; el Jaccard medio del top 5 fue 1.000 y el error absoluto local máximo 0.2180. La estabilidad de variables no garantiza fidelidad de probabilidad. LIME describe una aproximación local, mientras SHAP conserva aditividad; no se exige que sus pesos coincidan.
+
+Caso 4513: error de alta confianza. Clase observada=1; probabilidad nativa de abandono=0.0179. El identificador permite rastrear la observación sin volver a escoger un ejemplo.
+
+```{r mod-137}
+grafico_shap_local("xgboost__smote__random", 4513)
+```
+
+```{r mod-137-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-137")
+```
+
+Interpretación SHAP. Las dos contribuciones negativas de mayor magnitud son cat__Contract_Two year (-0.1392), num__tenure (-0.1109); reducen la probabilidad respecto del fondo. El cliente abandonó pese a recibir una probabilidad baja: es un falso negativo relevante para retención. Las atribuciones explican cómo se produjo la decisión equivocada; no justifican su corrección ni revelan por qué abandonó el cliente.
+
+```{r mod-139}
+grafico_lime("xgboost__smote__random", 4513)
+```
+
+```{r mod-139-salida, echo=FALSE, eval=TRUE}
+salida("mod/mod-139")
+```
+
+Interpretación LIME. La figura corresponde a semilla 42; el sustituto local aproxima -0.1141 frente a la probabilidad real 0.0179, con R² ponderado=0.4509. Entre tres semillas, R² varió de 0.4509 a 0.4577; el Jaccard medio del top 5 fue 0.778 y el error absoluto local máximo 0.1456. La estabilidad de variables no garantiza fidelidad de probabilidad. LIME describe una aproximación local, mientras SHAP conserva aditividad; no se exige que sus pesos coincidan.
+
+### 3.3 Conclusiones sustentadas por los resultados {-}
+
+Resultado observado. Se completaron 112 configuraciones y 1.680 unidades externas. RF–SMOTE obtuvo F1=0,6384 ± 0,0227, Recall=0,7351, Precision=0,5646, Accuracy=0,7788 y AUC=0,8438 en la realización principal. XGBoost–SMOTE–Random alcanzó F1=0,6380. Los cuatro optimizadores de RF–SMOTE empataron.
+
+**Interpretación.** La diferencia media de F1 RF–XGBoost es aproximadamente 0,00043, pequeña y sujeta a selección entre muchas configuraciones. El Recall se acompañó de falsas alertas; no hay costes cuantificados para traducirlo en beneficio económico. El ranking se conserva como descripción y selección exploratoria, no como confirmación.
+
+Conclusión sobre optimizadores. TPE, Genético y Random mejoraron el objetivo interno temprano respecto del orden de Grid, pero no mostraron ventaja universal a 24 evaluaciones ni aceleración temporal universal. Agotar el mismo dominio finito explica algunos empates. La mejora administrativa del registro resolvió trabajo redundante sin reducir el universo ni modificar el aprendizaje.
+
+Conclusión sobre calibración y explicación. Sigmoid redujo conjuntamente Brier y ECE en 80 de las 96 configuraciones con probabilidad nativa; no mejoró todas. SHAP identificó patrones relevantes para los modelos y permitió explicar falsos negativos seguros. LIME presentó diferencias de fidelidad entre casos; estabilidad de variables no basta para confiar en su aproximación probabilística. Ninguna explicación identifica efectos causales.
+
+Alcance estadístico. Friedman/Nemenyi/CD permanecen exploratorios porque los folds no son bloques independientes. DeLong dirigido no detectó diferencias de AUC después de Holm; esto no prueba equivalencia. Los IC son condicionales a modelos y no incluyen selección o reentrenamiento. El test histórico estaba expuesto y es evidencia suplementaria.
+
+RF–SMOTE se conserva como candidato operativo exploratorio. Una aplicación comercial requiere evaluación prospectiva independiente, costes de intervención explícitos y estabilidad temporal. Estas son necesidades futuras, no experimentos realizados ni motivos para reinterpretar los resultados existentes.

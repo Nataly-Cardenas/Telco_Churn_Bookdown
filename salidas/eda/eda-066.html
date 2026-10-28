@@ -1,0 +1,37 @@
+<div class="eda-table" id="eda-table-34"><span class="eda-table-title">Asociación numérica con Churn · mayor a menor |r|</span><input aria-label="Buscar en Asociación numérica con Churn · mayor a menor |r|" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Variable</th>
+      <th>r punto-biserial</th>
+      <th>N</th>
+      <th>|r|</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>tenure</td>
+      <td>-0.3456</td>
+      <td>5634</td>
+      <td>0.3456</td>
+    </tr>
+    <tr>
+      <td>MonthlyCharges</td>
+      <td>0.1980</td>
+      <td>5634</td>
+      <td>0.1980</td>
+    </tr>
+    <tr>
+      <td>TotalCharges</td>
+      <td>-0.1948</td>
+      <td>5626</td>
+      <td>0.1948</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-34');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

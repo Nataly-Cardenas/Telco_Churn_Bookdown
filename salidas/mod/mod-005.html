@@ -1,0 +1,8 @@
+<div class="eda-table" id="ma-tabla-1"><span class="eda-table-title">1.2 Universo experimental y reproducibilidad</span><input aria-label="Buscar en 1.2 Universo experimental y reproducibilidad" placeholder="Buscar en esta tabla…"><table class="dataframe"><thead><tr><th>Familias</th><th>Balanceos</th><th>Optimizadores</th><th>Configuraciones</th><th>Realizaciones</th><th>Folds externos</th><th>Unidades terminadas</th><th>Candidatos por búsqueda</th></tr></thead><tbody><tr><td>7</td><td>4</td><td>4</td><td>112</td><td>3</td><td>5</td><td>1680</td><td>24</td></tr></tbody></table></div><script>(function(){const root=document.getElementById('ma-tabla-1');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

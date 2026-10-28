@@ -1,0 +1,76 @@
+<div class="eda-table" id="eda-table-78"><span class="eda-table-title">Clientes de train con TotalCharges ausente</span><input aria-label="Buscar en Clientes de train con TotalCharges ausente" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Índice original</th>
+      <th>tenure</th>
+      <th>MonthlyCharges</th>
+      <th>TotalCharges</th>
+      <th>Churn</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>6670</td>
+      <td>0</td>
+      <td>73.35</td>
+      <td>—</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>4380</td>
+      <td>0</td>
+      <td>20.00</td>
+      <td>—</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>3826</td>
+      <td>0</td>
+      <td>25.35</td>
+      <td>—</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>488</td>
+      <td>0</td>
+      <td>52.55</td>
+      <td>—</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>1082</td>
+      <td>0</td>
+      <td>25.75</td>
+      <td>—</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>1340</td>
+      <td>0</td>
+      <td>56.05</td>
+      <td>—</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>6754</td>
+      <td>0</td>
+      <td>61.90</td>
+      <td>—</td>
+      <td>No</td>
+    </tr>
+    <tr>
+      <td>3331</td>
+      <td>0</td>
+      <td>19.85</td>
+      <td>—</td>
+      <td>No</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-78');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

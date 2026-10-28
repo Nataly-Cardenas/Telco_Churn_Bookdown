@@ -1,0 +1,98 @@
+<div class="eda-table" id="eda-table-82"><span class="eda-table-title">Asociaciones categóricas · resumen ordenado</span><input aria-label="Buscar en Asociaciones categóricas · resumen ordenado" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Variable</th>
+      <th>V de Cramer</th>
+      <th>p Holm</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Contract</td>
+      <td>0.4111</td>
+      <td>3.07e-206</td>
+    </tr>
+    <tr>
+      <td>OnlineSecurity</td>
+      <td>0.3510</td>
+      <td>2.95e-150</td>
+    </tr>
+    <tr>
+      <td>TechSupport</td>
+      <td>0.3449</td>
+      <td>4.46e-145</td>
+    </tr>
+    <tr>
+      <td>InternetService</td>
+      <td>0.3266</td>
+      <td>5.06e-130</td>
+    </tr>
+    <tr>
+      <td>PaymentMethod</td>
+      <td>0.3111</td>
+      <td>1.06e-116</td>
+    </tr>
+    <tr>
+      <td>OnlineBackup</td>
+      <td>0.2943</td>
+      <td>1.37e-105</td>
+    </tr>
+    <tr>
+      <td>DeviceProtection</td>
+      <td>0.2799</td>
+      <td>1.80e-95</td>
+    </tr>
+    <tr>
+      <td>StreamingMovies</td>
+      <td>0.2317</td>
+      <td>2.34e-65</td>
+    </tr>
+    <tr>
+      <td>StreamingTV</td>
+      <td>0.2304</td>
+      <td>1.17e-64</td>
+    </tr>
+    <tr>
+      <td>PaperlessBilling</td>
+      <td>0.1980</td>
+      <td>4.17e-49</td>
+    </tr>
+    <tr>
+      <td>Dependents</td>
+      <td>0.1675</td>
+      <td>1.86e-35</td>
+    </tr>
+    <tr>
+      <td>Partner</td>
+      <td>0.1457</td>
+      <td>3.81e-27</td>
+    </tr>
+    <tr>
+      <td>SeniorCitizen</td>
+      <td>0.1456</td>
+      <td>3.81e-27</td>
+    </tr>
+    <tr>
+      <td>MultipleLines</td>
+      <td>0.0441</td>
+      <td>0.0124</td>
+    </tr>
+    <tr>
+      <td>PhoneService</td>
+      <td>0.0179</td>
+      <td>0.3568</td>
+    </tr>
+    <tr>
+      <td>gender</td>
+      <td>0.0022</td>
+      <td>0.8684</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-82');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

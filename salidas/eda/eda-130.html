@@ -1,0 +1,73 @@
+<div class="eda-table" id="eda-table-83"><span class="eda-table-title">Hallazgos y siguiente etapa</span><input aria-label="Buscar en Hallazgos y siguiente etapa" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Aspecto</th>
+      <th>Hallazgo en las salidas</th>
+      <th>Recomendación preliminar</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Estructura</td>
+      <td>7043 filas y 21 columnas originales; 5634 filas en EDA</td>
+      <td>Reutilizar split y huella del archivo</td>
+    </tr>
+    <tr>
+      <td>Tipos</td>
+      <td>3 numéricas y 16 categóricas candidatas</td>
+      <td>Codificar y escalar para logística dentro de cada fold</td>
+    </tr>
+    <tr>
+      <td>Churn</td>
+      <td>No: 4139 (73.46%); Yes: 1495 (26.54%)</td>
+      <td>Métricas de clase positiva; comparar pesos en validación interna</td>
+    </tr>
+    <tr>
+      <td>Faltantes</td>
+      <td>TotalCharges: 8 (0.14%)</td>
+      <td>Comparar imputación aprendida en train e indicador; no asumir cero</td>
+    </tr>
+    <tr>
+      <td>Outliers IQR</td>
+      <td>tenure: 0; MonthlyCharges: 0; TotalCharges: 0</td>
+      <td>No eliminar por regla mecánica</td>
+    </tr>
+    <tr>
+      <td>Asimetría</td>
+      <td>|g1| ≥ 0.5: TotalCharges</td>
+      <td>Comparar transformación solo en validación interna</td>
+    </tr>
+    <tr>
+      <td>Asociación numérica</td>
+      <td>Mayor |r|: tenure (0.3456)</td>
+      <td>No seleccionar por p-value</td>
+    </tr>
+    <tr>
+      <td>Asociación categórica</td>
+      <td>Contract (V=0.4111), OnlineSecurity (V=0.3510), TechSupport (V=0.3449)</td>
+      <td>Revisar utilidad incremental</td>
+    </tr>
+    <tr>
+      <td>Correlaciones altas</td>
+      <td>tenure–TotalCharges (ρ=0.8914)</td>
+      <td>Revisar coeficientes y regularización</td>
+    </tr>
+    <tr>
+      <td>Categorías raras</td>
+      <td>0 categorías bajo 1%</td>
+      <td>Agrupar solo si se justifica en train</td>
+    </tr>
+    <tr>
+      <td>Consistencia</td>
+      <td>0 discrepancias de servicios; 15 perfiles coincidentes</td>
+      <td>No confundir perfiles iguales con clientes repetidos</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-83');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

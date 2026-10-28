@@ -1,0 +1,9 @@
+_book/
+_bookdown_files/
+telco-churn.Rmd
+telco-churn.knit.md
+*_cache/
+*_files/
+.Rhistory
+.RData
+.Rproj.user/

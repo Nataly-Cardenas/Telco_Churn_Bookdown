@@ -1,0 +1,46 @@
+<div class="eda-table" id="eda-table-81"><span class="eda-table-title">Contrastes de ausencia · train</span><input aria-label="Buscar en Contrastes de ausencia · train" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Comparación</th>
+      <th>χ²</th>
+      <th>gl</th>
+      <th>Esperada mínima</th>
+      <th>Esperadas &lt;5</th>
+      <th>Prueba</th>
+      <th>p</th>
+      <th>V de Cramer</th>
+      <th>p Holm</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Churn</td>
+      <td>2.8937</td>
+      <td>1</td>
+      <td>2.1228</td>
+      <td>1</td>
+      <td>Fisher exacta (χ² descriptivo)</td>
+      <td>0.1196</td>
+      <td>0.0227</td>
+      <td>0.1196</td>
+    </tr>
+    <tr>
+      <td>tenure = 0</td>
+      <td>5,634.0000</td>
+      <td>1</td>
+      <td>0.0114</td>
+      <td>1</td>
+      <td>Fisher exacta (χ² descriptivo)</td>
+      <td>3.99e-26</td>
+      <td>1.0000</td>
+      <td>7.98e-26</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-81');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

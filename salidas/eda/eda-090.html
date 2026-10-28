@@ -1,0 +1,45 @@
+<div class="eda-table" id="eda-table-73"><span class="eda-table-title">Correlaciones y observaciones disponibles</span><input aria-label="Buscar en Correlaciones y observaciones disponibles" placeholder="Buscar en esta tabla…"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Variable A</th>
+      <th>Variable B</th>
+      <th>Spearman ρ (usado)</th>
+      <th>Pearson r (ref.)</th>
+      <th>N del par</th>
+      <th>|ρ| &gt; 0.7</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>tenure</td>
+      <td>MonthlyCharges</td>
+      <td>0.2842</td>
+      <td>0.2567</td>
+      <td>5634</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <td>tenure</td>
+      <td>TotalCharges</td>
+      <td>0.8914</td>
+      <td>0.8294</td>
+      <td>5626</td>
+      <td>True</td>
+    </tr>
+    <tr>
+      <td>MonthlyCharges</td>
+      <td>TotalCharges</td>
+      <td>0.6420</td>
+      <td>0.6540</td>
+      <td>5626</td>
+      <td>False</td>
+    </tr>
+  </tbody>
+</table></div><script>(function(){const root=document.getElementById('eda-table-73');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='—'&&y!=='—'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>
