@@ -1,7 +1,5 @@
 # Telco Customer Churn — Bookdown
 
-Versión en Bookdown (R) del Jupyter Book [Telco_Churn_JBook](https://github.com/Nataly-Cardenas/Telco_Churn_JBook). El libro tiene el mismo contenido, las mismas tablas, gráficas e interpretaciones, y el mismo diseño (incluido el modo oscuro por defecto); el código de cada capítulo está escrito en R y se muestra plegado con "Show code cell source".
-
 ## Estructura
 
 ```text
@@ -22,8 +20,6 @@ Telco_Churn_Bookdown/
 └── construir_libro.R            # Construye el libro en _book/
 ```
 
-Igual que el Jupyter Book (que se publica con `execute_notebooks: off`), el libro no vuelve a ejecutar los análisis al construirse: los bloques de código R tienen `eval = FALSE` y las salidas se insertan desde `salidas/`.
-
 ## Ver el libro en tu computador
 
 Se necesita R (4.1 o superior). RStudio ya incluye Pandoc; si no usas RStudio, instala también [Pandoc](https://pandoc.org/installing.html).
@@ -40,6 +36,3 @@ Rscript construir_libro.R
 
 Luego abre `_book/index.html` en el navegador.
 
-## Publicación
-
-Al actualizar la rama `main`, GitHub Actions construye el libro y lo publica en GitHub Pages. En la configuración del repositorio, en Settings → Pages, la opción Source debe estar en "GitHub Actions".
