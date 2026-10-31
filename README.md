@@ -12,8 +12,9 @@ Telco_Churn_Bookdown/
 ├── 01-eda.Rmd                   # Análisis exploratorio de datos
 ├── 02-preprocesamiento.Rmd      # Preprocesamiento de datos
 ├── 03-modelado-avanzado.Rmd     # Modelamiento avanzado
-├── 04-paper.Rmd                 # Paper
-├── 05-guia-repositorio.Rmd      # Guía del repositorio
+├── 04-codigo-experimento.Rmd    # Apéndice: código del entrenamiento de las 112 configuraciones
+├── 05-paper.Rmd                 # Paper
+├── 06-guia-repositorio.Rmd      # Guía del repositorio
 ├── R/salidas.R                  # Código plegable e inserción de las salidas guardadas
 ├── salidas/                     # Salidas del Jupyter Book (tablas, figuras Plotly e imágenes)
 ├── style/                       # Estilos y barra superior del libro
@@ -23,6 +24,8 @@ Telco_Churn_Bookdown/
 ```
 
 Igual que el Jupyter Book (que se publica con `execute_notebooks: off`), el libro no vuelve a ejecutar los análisis al construirse: los bloques de código R tienen `eval = FALSE` y las salidas se insertan desde `salidas/`.
+
+El apéndice del código del experimento es la excepción al código en R: igual que en el Jupyter Book, reproduce tal cual las celdas de Python que entrenaron las 112 configuraciones (guardadas en `source_snapshot.json`), porque su objetivo es mostrar el código exacto que se ejecutó. En el modelado avanzado, las funciones de los experimentos complementarios (`complementos/`, también en Python) se muestran del mismo modo.
 
 ## Ver el libro en tu computador
 

@@ -1,0 +1,1790 @@
+# Apéndice: código del entrenamiento de las 112 configuraciones {#codigo-experimento -}
+
+Las tablas y figuras del modelado avanzado leen resultados ya calculados. Este apéndice
+muestra el código que los produjo: las 32 celdas que quedaron guardadas en
+`source_snapshot.json` en el momento de ejecutarse (SHA-256 `b29d988bdea743f0…`). Se reproducen tal
+cual; lo único que cambia es el nivel de los encabezados.
+
+Las celdas no se ejecutan al construir el libro. Volver a correrlas desde cero implica unas
+40.000 evaluaciones de candidatos y varios días de cómputo en un portátil, por eso el flujo
+normal es verificar los artefactos con `python verificar_reproduccion.py` y ejecutar
+`MODELADO_AVANZADO.ipynb` sobre ellos. Si se quiere repetir el entrenamiento, el orden es el de este
+apéndice: importaciones y configuración, datos y particiones, registro, Pipeline, espacios,
+evaluador, optimizadores, validación anidada y, al final, `execute_official_block`.
+
+Los textos Markdown intercalados son los de ese momento; algunos anuncian resultados
+"pendientes" que hoy están en el capítulo de modelado.
+
+```{python cod-001}
+import hashlib, json
+from pathlib import Path
+
+SNAPSHOT = Path('resultados_modelado/oficial/20260920T030103_517c8c6b7906_69c6c7/source_snapshot.json')
+assert hashlib.sha256(SNAPSHOT.read_bytes()).hexdigest() == 'b29d988bdea743f0ffc1575e360fac2c6642386ccbf70cbdd30aae577ce1b773'
+celdas = json.loads(SNAPSHOT.read_text(encoding='utf-8'))
+print(len(celdas), 'celdas; huella verificada')
+```
+
+## Modelado avanzado: clasificación de abandono de clientes {-}
+
+### 3. Modelos implementados y resultados obtenidos {-}
+
+**Fase 3: cuatro optimizadores implementados sobre el mismo evaluador interno.**
+El universo oficial conserva **7 modelos × 4 balanceos × 4 optimizadores = 112
+configuraciones**, con Nested CV y F1 positivo como único objetivo. Recall, ROC-AUC,
+Accuracy y Precision complementan el reporte. La referencia es Sin balanceo; no se
+añaden clasificadores triviales.
+
+Este notebook ejecuta por defecto únicamente pruebas técnicas pequeñas. **No sustituyen
+las 112 configuraciones oficiales**, cuya ejecución por bloques está preparada para
+la fase experimental posterior. No se deduce superioridad de los scores del piloto.
+
+Se conservan EDA y PREPROCESAMIENTO sin modificación. Los datos proceden del CSV original
+y los índices históricos. Test ya fue consultado anteriormente y se mantiene fuera de
+las pruebas actuales. La exploración histórica condiciona el estudio: encapsular ajustes
+por fold no elimina las decisiones humanas tomadas previamente sobre desarrollo.
+
+En VS Code seleccionar `.venv-modelado/Scripts/python.exe` (Python 3.12). Las dependencias
+están fijadas en requirements-modelado.txt. Ejecutar desde la carpeta del proyecto.
+Las unidades completas y los pliegues internos terminados se recuperan tras interrupciones.
+
+```{python cod-003}
+from pathlib import Path
+from datetime import datetime, timezone
+from importlib.metadata import version
+from itertools import product
+from time import perf_counter
+from contextlib import contextmanager
+import hashlib
+import json
+import os
+import platform
+import random
+import sys
+import threading
+import copy
+import math
+import optuna
+from deap import base as deap_base, creator as deap_creator, tools as deap_tools
+from sklearn.model_selection import ParameterGrid
+from sklearn.calibration import CalibratedClassifierCV
+from joblib.externals import cloudpickle
+import matplotlib.pyplot as plt
+import uuid
+import warnings
+
+import numpy as np
+import pandas as pd
+import joblib
+import psutil
+from IPython.display import display
+from threadpoolctl import threadpool_limits
+from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin, clone
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score,
+                             roc_auc_score, confusion_matrix, brier_score_loss)
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.utils.validation import check_is_fitted, validate_data
+from sklearn.utils.metaestimators import available_if
+from sklearn.exceptions import ConvergenceWarning
+from imblearn.pipeline import Pipeline
+from imblearn.over_sampling import SMOTE, ADASYN
+from xgboost import XGBClassifier
+
+ROOT = Path.cwd().resolve()
+if not (ROOT / 'WA_Fn-UseC_-Telco-Customer-Churn.csv').is_file():
+    raise RuntimeError('Abrir el notebook con la carpeta Telco_Churn_NEW como directorio de trabajo.')
+DIRECT_VERSIONS = {
+    'numpy': '2.0.2', 'pandas': '2.3.3', 'scipy': '1.15.3',
+    'scikit-learn': '1.6.1', 'imbalanced-learn': '0.14.0', 'xgboost': '3.0.5',
+    'optuna': '4.2.1', 'deap': '1.4.3', 'matplotlib': '3.10.8',
+    'joblib': '1.5.3', 'threadpoolctl': '3.6.0', 'psutil': '7.0.0',
+}
+VERSIONS = {name: version(name) for name in DIRECT_VERSIONS}
+if VERSIONS != DIRECT_VERSIONS or sys.version_info[:2] != (3, 12):
+    raise RuntimeError('El kernel no coincide con Python 3.12 y las versiones fijadas. Revisar el entorno.')
+print('Python:', platform.python_version(), '| Kernel:', sys.executable)
+display(pd.Series(VERSIONS, name='versión').to_frame())
+```
+
+```{python cod-004}
+# Una sola configuración gobierna el piloto. No son hiperparámetros óptimos.
+CONFIG = {
+    'schema_version': 'phase3-v1', 'phase': 'technical_pilot', 'root_seed': 42,
+    'pilot_rows': 600, 'outer_folds': 2, 'inner_folds': 2,
+    'n_jobs': 1, 'blas_threads': 1, 'positive_class': 1,
+    'objective': 'f1_positive', 'sampler_neighbors': 5,
+    'sampling_strategy': 1.0, 'calibration_bins': 10,
+    'resume': True, 'run_pilot': True, 'minimum_available_mb': 256,
+}
+# Las claves numéricas de cada fuente evitan depender de hash(), que varía entre procesos.
+SEED_ROLES = {'subset': 11, 'outer': 23, 'inner': 37, 'sampler': 41,
+              'model': 53, 'calibration': 67, 'test': 79, 'optimizer': 83}
+random.seed(CONFIG['root_seed'])
+np.random.seed(CONFIG['root_seed'])
+
+
+def canonical(value):
+    """Serializa configuración JSON determinista.
+
+    Parameters
+    ----------
+    value : objeto JSON compatible
+        Debe excluir valores no finitos.
+    Returns
+    -------
+    str
+        Representación estable, independiente del orden de claves.
+    """
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False,
+                      separators=(',', ':'))
+
+
+def digest(value):
+    """Devuelve SHA-256 de un objeto JSON compatible para identificar su contenido."""
+    return hashlib.sha256(canonical(value).encode('utf-8')).hexdigest()
+
+
+def file_hash(path):
+    """Devuelve SHA-256 de los bytes de un archivo sin modificarlo."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def seed_for(role, *coordinates):
+    """Deriva una semilla reproducible por función y coordenadas del experimento.
+
+    Parameters
+    ----------
+    role : str
+        Clave en SEED_ROLES: separa modelo, sampler y particiones.
+    coordinates : int
+        Réplica y folds; no incluyen el optimizador para permitir ajustes comparables.
+    Returns
+    -------
+    int
+        Semilla uint32 aceptada por las bibliotecas del núcleo.
+    """
+    return int(np.random.SeedSequence([CONFIG['root_seed'], SEED_ROLES[role],
+                                      *coordinates]).generate_state(1)[0])
+
+
+# El perfil técnico no altera ni reemplaza el universo oficial.
+TECHNICAL_PROFILE = {
+    'purpose': 'phase3_technical', 'outer_folds': 2, 'inner_folds': 2,
+    'budget': 12, 'tpe_startup': 4, 'population': 4, 'calibration_folds': 2,
+    'n_jobs': 1, 'replicates': [0], 'space_profile': 'technical',
+}
+OFFICIAL_PROFILE = {
+    'purpose': 'official', 'outer_folds': 5, 'inner_folds': 3,
+    'budget': 24, 'tpe_startup': 8, 'population': 8, 'calibration_folds': 3,
+    'n_jobs': 2, 'replicates': [0, 1, 2], 'space_profile': 'official',
+}
+RUN_TECHNICAL = True
+RUN_OFFICIAL = False  # No cambiar hasta el punto de control previo a Fase 4.
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+```
+
+#### 3.2 Datos, particiones y trazabilidad {-}
+
+Se reconstruyen los datos a partir del CSV original. Las matrices procesadas no se
+reutilizan, porque su escalado y codificación fueron ajustados con todo desarrollo.
+Los índices son identificadores originales de fila, no posiciones después de muestrear.
+La lectura inicial verifica identidad y particiones; no produce métricas ni descriptivos del test.
+
+```{python cod-006}
+EXPECTED_PROTECTED = {
+    'EDA.ipynb': 'A3730F2A2D192035E14441BCA5E200402886806B8D8EB229BC4A877FBDA9ABAF',
+    'PREPROCESAMIENTO.ipynb': 'F395DC512F87A90DBCF1E734F7EA1FC746E1959A03984B741235D870BD956F0C',
+}
+for filename, expected in EXPECTED_PROTECTED.items():
+    if file_hash(ROOT / filename).upper() != expected:
+        raise RuntimeError(f'Cambió el notebook protegido: {filename}. Revisar antes de continuar.')
+DATA_FILES = ['WA_Fn-UseC_-Telco-Customer-Churn.csv', 'train_index.csv', 'test_index.csv']
+INPUT_HASHES = {name: file_hash(ROOT / name) for name in DATA_FILES}
+_raw = pd.read_csv(ROOT / DATA_FILES[0])
+_raw.columns = _raw.columns.str.strip()
+train_ids = pd.read_csv(ROOT / 'train_index.csv')['train_index'].astype(int).to_numpy()
+test_ids = pd.read_csv(ROOT / 'test_index.csv')['test_index'].astype(int).to_numpy()
+assert _raw.columns.is_unique and _raw.customerID.notna().all() and _raw.customerID.is_unique
+assert len(set(train_ids)) == len(train_ids) and len(set(test_ids)) == len(test_ids)
+assert set(train_ids).isdisjoint(test_ids)
+assert set(train_ids) | set(test_ids) == set(_raw.index)
+assert set(_raw.Churn.unique()) == {'No', 'Yes'} and _raw.Churn.notna().all()
+X_dev = _raw.loc[train_ids].drop(columns=['customerID', 'Churn']).copy()
+y_dev = _raw.loc[train_ids, 'Churn'].map({'No': 0, 'Yes': 1}).astype(int)
+customer_keys = _raw.loc[train_ids, 'customerID'].copy()
+del _raw
+assert X_dev.index.equals(y_dev.index)
+_chosen, _unused = train_test_split(np.arange(len(X_dev)), train_size=CONFIG['pilot_rows'],
+                                  stratify=y_dev, random_state=seed_for('subset'))
+X_pilot, y_pilot = X_dev.iloc[_chosen].copy(), y_dev.iloc[_chosen].copy()
+assert set(X_pilot.index).isdisjoint(test_ids)
+print(f'Desarrollo: {len(X_dev)} clientes. Piloto técnico: {len(X_pilot)}. Test excluido.')
+```
+
+```{python cod-007}
+def make_splits(X, y, outer_count, inner_count, replicate=0):
+    """Construye índices posicionales y originales de Nested CV sin ajustar modelos.
+
+    Parameters
+    ----------
+    X, y : DataFrame, Series
+        Mismos índices originales, únicos; ambas clases deben estar representadas.
+    outer_count, inner_count : int
+        Número de pliegues estratificados externos e internos.
+    replicate : int
+        Identificador para derivación de semillas; no implica independencia estadística.
+    Returns
+    -------
+    list of dict
+        Posiciones referidas siempre a X completo; IDs originales para auditoría.
+    """
+    assert X.index.is_unique and X.index.equals(y.index)
+    outer = StratifiedKFold(outer_count, shuffle=True, random_state=seed_for('outer', 0))
+    plans = []
+    for fold, (fit_pos, eval_pos) in enumerate(outer.split(X, y)):
+        inner = StratifiedKFold(inner_count, shuffle=True, random_state=seed_for('inner', 0, fold))
+        inner_plans = []
+        for inner_fold, (a, b) in enumerate(inner.split(X.iloc[fit_pos], y.iloc[fit_pos])):
+            fit_inner, val_inner = fit_pos[a], fit_pos[b]
+            assert set(fit_inner).isdisjoint(val_inner)
+            assert set(fit_inner).union(val_inner) == set(fit_pos)
+            assert set(fit_inner).union(val_inner).isdisjoint(eval_pos)
+            inner_plans.append({'fold': inner_fold, 'fit_pos': fit_inner.tolist(),
+                                'eval_pos': val_inner.tolist(),
+                                'fit_ids': X.index[fit_inner].tolist(),
+                                'eval_ids': X.index[val_inner].tolist()})
+        plans.append({'fold': fold, 'fit_pos': fit_pos.tolist(), 'eval_pos': eval_pos.tolist(),
+                      'fit_ids': X.index[fit_pos].tolist(), 'eval_ids': X.index[eval_pos].tolist(),
+                      'outer_seed': seed_for('outer', 0),
+                      'inner_seed': seed_for('inner', 0, fold), 'inner': inner_plans})
+    assert sorted(p for plan in plans for p in plan['eval_pos']) == list(range(len(X)))
+    return plans
+
+
+SPLITS = make_splits(X_pilot, y_pilot, CONFIG['outer_folds'], CONFIG['inner_folds'])
+print('Particiones comunes verificadas:', len(SPLITS), 'externas ×', CONFIG['inner_folds'], 'internas.')
+```
+
+#### 3.3 Registro antes del entrenamiento {-}
+
+Cada corrida tiene hashes de código, datos, entorno, configuración y particiones.
+Cada unidad completa contiene sus trials, predicciones externas y Pipeline serializado.
+Los resultados se escriben primero en un intento nuevo; un marcador de finalización con
+hashes permite reanudar sin sobrescribir. Un fallo conserva su intento y su motivo.
+Solo las unidades completas y verificadas participan en los resúmenes.
+
+```{python cod-009}
+def write_json(path, value):
+    """Escribe JSON con reemplazo atómico del archivo temporal.
+
+    Parameters
+    ----------
+    path : Path
+        Destino en la corrida; no reutilizar una ruta de un intento anterior.
+    value : objeto JSON compatible
+        No admite NaN/Infinity: los valores no definidos se representan con None.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
+    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
+    os.replace(temp, path)
+
+
+def append_jsonl(path, value):
+    """Añade un evento al intento actual y fuerza su persistencia en disco."""
+    with Path(path).open('a', encoding='utf-8') as stream:
+        stream.write(canonical(value) + '\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def notebook_code_hash():
+    """Identifica código de este notebook excluyendo salidas y contadores de ejecución."""
+    notebook = json.loads((ROOT / 'MODELADO_AVANZADO.ipynb').read_text(encoding='utf-8'))
+    return digest([''.join(c['source']) for c in notebook['cells'] if c['cell_type'] == 'code'])
+
+
+class RunStore:
+    """Registro monoproceso de corridas inmutables y unidades reanudables.
+
+    Parameters
+    ----------
+    root : Path
+        Carpeta local de resultados.
+    protocol : dict
+        Configuración completa, candidatos y hashes que identifican el experimento.
+    resume : bool
+        Reutiliza solo una corrida con protocolo idéntico y unidades íntegras.
+    """
+    def __init__(self, root, protocol, resume=True):
+        self.protocol = protocol
+        self.protocol_hash = digest(protocol)
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        matches = []
+        for manifest in root.glob('*/manifest.json'):
+            data = json.loads(manifest.read_text(encoding='utf-8'))
+            if data['protocol_hash'] == self.protocol_hash:
+                matches.append(manifest.parent)
+        if resume and matches:
+            self.path = sorted(matches)[-1]
+        else:
+            stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')
+            self.path = root / f'{stamp}_{self.protocol_hash[:12]}_{uuid.uuid4().hex[:6]}'
+            self.path.mkdir()
+            write_json(self.path / 'manifest.json', {
+                'protocol_hash': self.protocol_hash, 'protocol': protocol,
+                'created_utc': datetime.now(timezone.utc).isoformat(),
+                'python': platform.python_version(), 'executable': sys.executable,
+                'platform': platform.platform(), 'logical_cpus': psutil.cpu_count(),
+                'physical_memory_bytes': psutil.virtual_memory().total,
+                'schema_version': CONFIG['schema_version'],
+            })
+        self.lock_path = self.path / '.writer.lock'
+
+    @contextmanager
+    def writer(self):
+        """Impide dos escritores simultáneos; un lock residual exige revisión, no borrado automático."""
+        with self.lock_path.open('x', encoding='utf-8') as stream:
+            stream.write(str(os.getpid()))
+        try:
+            yield
+        finally:
+            self.lock_path.unlink(missing_ok=True)
+
+    def completed(self, unit_id):
+        """Carga una unidad solo si cada archivo concuerda con el hash del marcador."""
+        marker = self.path / unit_id / 'complete.json'
+        if not marker.exists():
+            return None
+        data = json.loads(marker.read_text(encoding='utf-8'))
+        for relative, expected in data['files'].items():
+            file = marker.parent / relative
+            if not file.is_file() or file_hash(file) != expected:
+                raise RuntimeError(f'Unidad dañada: {unit_id}, archivo {relative}')
+        result_path = marker.parent / data['result']
+        return json.loads(result_path.read_text(encoding='utf-8'))
+
+    def start_attempt(self, unit_id):
+        """Crea un intento nuevo, conservando los intentos fallidos o interrumpidos."""
+        folder = self.path / unit_id / ('attempt_' + uuid.uuid4().hex[:12])
+        folder.mkdir(parents=True, exist_ok=False)
+        return folder
+
+    def finish(self, unit_id, attempt):
+        """Publica hashes de una unidad terminada; es el único punto que la hace reutilizable."""
+        parent = self.path / unit_id
+        files = {str(p.relative_to(parent)): file_hash(p) for p in attempt.iterdir() if p.is_file()}
+        write_json(parent / 'complete.json', {
+            'result': str((attempt / 'result.json').relative_to(parent)), 'files': files,
+            'finished_utc': datetime.now(timezone.utc).isoformat(),
+        })
+
+
+class MemoryMonitor:
+    """Muestrea RSS del proceso y sus hijos; el pico observado es un límite inferior.
+
+    Parameters
+    ----------
+    interval : float
+        Segundos entre muestras. No detecta todos los picos más breves que el intervalo.
+    """
+    def __init__(self, interval=0.02):
+        self.interval = interval
+        self.stop_event = threading.Event()
+        self.peak_bytes = 0
+        self.start_bytes = 0
+
+    def sample(self):
+        """Obtiene RSS; no suma procesos que ya terminaron."""
+        process = psutil.Process()
+        total = 0
+        for proc in [process] + process.children(recursive=True):
+            try:
+                total += proc.memory_info().rss
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        self.peak_bytes = max(self.peak_bytes, total)
+        return total
+
+    def __enter__(self):
+        self.start_bytes = self.sample()
+        def watch():
+            while not self.stop_event.wait(self.interval):
+                self.sample()
+        self.thread = threading.Thread(target=watch, daemon=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, *args):
+        self.sample()
+        self.stop_event.set()
+        self.thread.join()
+```
+
+```{python cod-010}
+class RecoverableStore(RunStore):
+    """Extiende el registro con intentos recuperables y bloqueo asociado al proceso.
+
+    El checkpoint de cada pliegue interno se escribe atómicamente. Al reanudar se
+    reconstruye la secuencia determinista del optimizador usando esos resultados,
+    sin repetir ajustes completos. No se comparte caché entre optimizadores, para
+    evitar atribuir a uno el ahorro de trabajo realizado por otro.
+    """
+    @contextmanager
+    def writer(self):
+        if self.lock_path.exists():
+            lock = json.loads(self.lock_path.read_text(encoding='utf-8'))
+            try:
+                alive = abs(psutil.Process(lock['pid']).create_time()-lock['process_created']) < 0.01
+            except psutil.NoSuchProcess:
+                alive = False
+            if alive:
+                raise RuntimeError('Otra ejecución posee la corrida; no abrir dos escritores.')
+            # Conservar evidencia del bloqueo abandonado sin tocar los resultados.
+            self.lock_path.rename(self.path/f'abandoned_lock_{uuid.uuid4().hex}.json')
+        with self.lock_path.open('x', encoding='utf-8') as stream:
+            json.dump({'pid': os.getpid(), 'process_created': psutil.Process().create_time()}, stream)
+        try:
+            yield
+        finally:
+            self.lock_path.unlink(missing_ok=True)
+
+    def working_attempt(self, unit_id):
+        """Recupera el intento activo; no borra trazas de ejecuciones interrumpidas."""
+        active = self.path/unit_id/'active.json'
+        if active.exists():
+            info = json.loads(active.read_text(encoding='utf-8'))
+            attempt = self.path/unit_id/info['attempt']
+            if not attempt.is_dir():
+                raise RuntimeError('Checkpoint activo ausente: revisar integridad.')
+            return attempt
+        attempt = self.start_attempt(unit_id)
+        write_json(active, {'attempt': attempt.name, 'protocol_hash': self.protocol_hash})
+        return attempt
+
+    def finish(self, unit_id, attempt):
+        """Sella también checkpoints anidados, no solo los archivos del nivel superior."""
+        parent = self.path/unit_id
+        files = {str(p.relative_to(parent)): file_hash(p) for p in attempt.rglob('*') if p.is_file()}
+        write_json(parent/'complete.json', {'result': str((attempt/'result.json').relative_to(parent)),
+            'files': files, 'finished_utc': datetime.now(timezone.utc).isoformat()})
+
+
+def checked_read(path):
+    """Lee un checkpoint con su hash de contenido; rechaza corrupción incluso sin sello final."""
+    package = json.loads(Path(path).read_text(encoding='utf-8'))
+    if digest(package['data']) != package['sha256']:
+        raise RuntimeError(f'Checkpoint dañado: {path}')
+    return package['data']
+
+
+def checked_write(path, data):
+    """Guarda datos y checksum en una única escritura atómica."""
+    write_json(path, {'sha256': digest(data), 'data': data})
+```
+
+#### 3.4 Transformaciones y balanceo {-}
+
+Las reglas deterministas reproducen las decisiones históricas. Los parámetros aprendidos
+del escalador y OHE se estiman en cada ajuste. SMOTE/ADASYN actúan solamente durante
+`fit_resample`; nunca durante predicción. Sus indicadores interpolados son puntos sintéticos
+del espacio codificado, no perfiles de clientes interpretables. Las validaciones usan clientes reales.
+
+```{python cod-012}
+NUMERIC = ['tenure', 'MonthlyCharges', 'TotalCharges', 'SeniorCitizen', 'AvgChargePerMonth']
+CATEGORICAL = [c for c in X_dev.columns if c not in NUMERIC]
+SERVICE_COLS = ['OnlineSecurity', 'OnlineBackup', 'DeviceProtection', 'TechSupport',
+                'StreamingTV', 'StreamingMovies']
+
+
+class HistoricalFeatures(TransformerMixin, BaseEstimator):
+    """Aplica reglas por fila y conserva IDs de fit para auditar aislamiento.
+
+    No aprende imputación ni consulta objetivos. Un faltante TotalCharges con tenure
+    distinto de cero es un error de contrato, no una invitación a imputar otro valor.
+    """
+    def fit(self, X, y=None):
+        self.fit_ids_ = X.index.to_numpy().copy()
+        self.feature_names_in_ = np.asarray(X.columns, dtype=object)
+        self.n_features_in_ = X.shape[1]
+        self.transform(X)
+        return self
+
+    def transform(self, X):
+        out = X.copy(deep=True)
+        total = pd.to_numeric(out['TotalCharges'], errors='coerce')
+        if (total.isna() & out['tenure'].ne(0)).any():
+            raise ValueError('TotalCharges ausente/no numérico con tenure != 0.')
+        out['TotalCharges'] = total.fillna(0.0)
+        for col in SERVICE_COLS:
+            out[col] = out[col].replace('No internet service', 'No')
+        out['MultipleLines'] = out['MultipleLines'].replace('No phone service', 'No')
+        # np.divide con where evita evaluar 0/0 en la rama descartada.
+        avg = out['MonthlyCharges'].to_numpy(dtype=float).copy()
+        np.divide(out['TotalCharges'].to_numpy(dtype=float), out['tenure'].to_numpy(dtype=float),
+                  out=avg, where=out['tenure'].to_numpy() > 0)
+        out['AvgChargePerMonth'] = avg
+        if not np.isfinite(out[NUMERIC].to_numpy(dtype=float)).all() or out[CATEGORICAL].isna().any().any():
+            raise ValueError('Datos no finitos o categorías ausentes fuera del contrato.')
+        return out
+
+
+class AuditedSampler(BaseEstimator):
+    """Remuestreador clonable con conteos antes/después, usado solo en fit.
+
+    Parameters
+    ----------
+    strategy : str
+        none, balanced, smote o adasyn. balanced no genera observaciones.
+    random_state : int
+        Semilla específica del ajuste.
+    neighbors : int
+        Vecinos requeridos por la interpolación. No se reduce silenciosamente.
+    ratio : float
+        Relación minoritaria/mayoritaria solicitada al remuestreador.
+    """
+    def __init__(self, strategy='none', random_state=42, neighbors=5, ratio=1.0):
+        self.strategy = strategy
+        self.random_state = random_state
+        self.neighbors = neighbors
+        self.ratio = ratio
+
+    def fit_resample(self, X, y):
+        self.before_ = np.bincount(np.asarray(y, dtype=int), minlength=2).tolist()
+        self.n_input_ = len(y)
+        if self.strategy in ('none', 'balanced'):
+            Xt, yt = X, y
+        elif self.strategy in ('smote', 'adasyn'):
+            if min(self.before_) <= self.neighbors:
+                raise ValueError('No hay suficientes clientes minoritarios para los vecinos fijados.')
+            cls = SMOTE if self.strategy == 'smote' else ADASYN
+            key = 'k_neighbors' if self.strategy == 'smote' else 'n_neighbors'
+            self.sampler_ = cls(sampling_strategy=self.ratio, random_state=self.random_state,
+                                **{key: self.neighbors})
+            Xt, yt = self.sampler_.fit_resample(X, y)
+        else:
+            raise ValueError(f'Balanceo desconocido: {self.strategy}')
+        self.after_ = np.bincount(np.asarray(yt, dtype=int), minlength=2).tolist()
+        self.n_output_ = len(yt)
+        return Xt, yt
+```
+
+```{python cod-013}
+class ClassWeightedKNN(ClassifierMixin, BaseEstimator):
+    """KNN con voto por distancia opcional y ponderación de clase aprendida en fit.
+
+    Parameters
+    ----------
+    n_neighbors : int
+        Vecinos para predecir; el piloto no modifica este valor si resulta inviable.
+    weights : {'uniform', 'distance'}
+        Ponderación geométrica, distinta de la ponderación por clase.
+    p : {1, 2}
+        Distancia Manhattan o euclídea.
+    balance_classes : bool
+        Multiplica cada voto por n/(2*n_clase). Con False reproduce KNN ordinario.
+    """
+    def __init__(self, n_neighbors=5, weights='uniform', p=2, balance_classes=False):
+        self.n_neighbors = n_neighbors
+        self.weights = weights
+        self.p = p
+        self.balance_classes = balance_classes
+
+    def fit(self, X, y):
+        Xv, yv = validate_data(self, X, y)
+        self.classes_, encoded = np.unique(yv, return_inverse=True)
+        if len(self.classes_) != 2:
+            raise ValueError('Se requieren ambas clases para ponderación binaria.')
+        self.class_counts_ = np.bincount(encoded)
+        self.class_weights_ = (len(yv) / (2 * self.class_counts_) if self.balance_classes
+                               else np.ones(2, dtype=float))
+        self.encoded_y_ = encoded
+        self.neighbors_ = KNeighborsClassifier(n_neighbors=self.n_neighbors,
+            weights=self.weights, p=self.p, algorithm='brute', n_jobs=1).fit(Xv, yv)
+        return self
+
+    def predict_proba(self, X):
+        check_is_fitted(self, 'neighbors_')
+        Xv = validate_data(self, X, reset=False)
+        distances, indices = self.neighbors_.kneighbors(Xv)
+        if self.weights == 'uniform':
+            votes = np.ones_like(distances)
+        elif self.weights == 'distance':
+            # Si hay coincidencias exactas, solo votan esos vecinos: contrato sklearn.
+            zero = distances == 0
+            votes = np.divide(1.0, distances, out=np.zeros_like(distances), where=~zero)
+            rows_zero = zero.any(axis=1)
+            votes[rows_zero] = zero[rows_zero].astype(float)
+        else:
+            raise ValueError('weights debe ser uniform o distance.')
+        labels = self.encoded_y_[indices]
+        votes *= self.class_weights_[labels]
+        totals = np.column_stack([(votes * (labels == c)).sum(axis=1) for c in range(2)])
+        return totals / totals.sum(axis=1, keepdims=True)
+
+    def predict(self, X):
+        # argmax desempata por primera clase ordenada, igual que el estimador nativo.
+        return self.classes_[np.argmax(self.predict_proba(X), axis=1)]
+
+
+class FoldWeightedClassifier(ClassifierMixin, BaseEstimator):
+    """Adapta pesos sin calcularlos fuera de cada subconjunto de ajuste.
+
+    Parameters
+    ----------
+    estimator : estimador clonable
+        El original nunca queda ajustado; estimator_ conserva la copia entrenada.
+    balanced : bool
+        Activa pesos n/(2*n_clase) o el mecanismo nativo equivalente.
+    """
+    def __init__(self, estimator, balanced=False):
+        self.estimator = estimator
+        self.balanced = balanced
+
+    def fit(self, X, y):
+        Xv, yv = validate_data(self, X, y)
+        self.classes_, encoded = np.unique(yv, return_inverse=True)
+        if not np.array_equal(self.classes_, [0, 1]):
+            raise ValueError('El núcleo requiere clase negativa 0 y positiva 1.')
+        self.counts_ = np.bincount(encoded)
+        self.class_weights_ = (len(yv) / (2 * self.counts_) if self.balanced else np.ones(2))
+        self.estimator_ = clone(self.estimator)
+        params = self.estimator_.get_params(deep=False)
+        if 'balance_classes' in params:
+            self.estimator_.set_params(balance_classes=self.balanced)
+            self.mechanism_ = 'class_weighted_vote' if self.balanced else 'none'
+            self.estimator_.fit(Xv, yv)
+        elif 'class_weight' in params:
+            self.estimator_.set_params(class_weight='balanced' if self.balanced else None)
+            self.mechanism_ = 'class_weight' if self.balanced else 'none'
+            self.estimator_.fit(Xv, yv)
+        else:
+            self.mechanism_ = 'sample_weight' if self.balanced else 'none'
+            kwargs = {'sample_weight': self.class_weights_[encoded]} if self.balanced else {}
+            self.estimator_.fit(Xv, yv, **kwargs)
+        self.n_seen_ = len(yv)
+        return self
+
+    def predict(self, X):
+        check_is_fitted(self, 'estimator_')
+        return self.estimator_.predict(validate_data(self, X, reset=False))
+
+    @available_if(lambda self: hasattr(self.estimator, 'predict_proba'))
+    def predict_proba(self, X):
+        check_is_fitted(self, 'estimator_')
+        return self.estimator_.predict_proba(validate_data(self, X, reset=False))
+
+    @available_if(lambda self: hasattr(self.estimator, 'decision_function'))
+    def decision_function(self, X):
+        check_is_fitted(self, 'estimator_')
+        return self.estimator_.decision_function(validate_data(self, X, reset=False))
+```
+
+```{python cod-014}
+MODEL_NAMES = ('knn', 'naive_bayes', 'logistic', 'decision_tree', 'random_forest', 'xgboost', 'svm')
+BALANCES = ('none', 'smote', 'adasyn', 'balanced')
+OPTIMIZERS = ('grid', 'random', 'bayesian_tpe', 'genetic')
+CATALOG = pd.DataFrame([
+    {'experiment_id': f'{m}__{b}__{o}', 'model': m, 'balance': b, 'optimizer': o,
+     'status': 'implemented_not_officially_run'} for m, b, o in product(MODEL_NAMES, BALANCES, OPTIMIZERS)
+])
+assert len(CATALOG) == 112 and CATALOG.experiment_id.is_unique
+
+
+def make_model(name, model_seed):
+    """Construye uno de los siete estimadores sin ajustar, con parámetros base explícitos.
+
+    Parameters
+    ----------
+    name : str
+        Familia del catálogo.
+    model_seed : int
+        Semilla del ajuste para estimadores aleatorios.
+    Returns
+    -------
+    BaseEstimator
+        Estimador nuevo. Los parámetros base no son resultados de optimización.
+    """
+    factories = {
+        'knn': lambda: ClassWeightedKNN(),
+        'naive_bayes': lambda: GaussianNB(),
+        'logistic': lambda: LogisticRegression(solver='liblinear', penalty='l2', C=1.0,
+                           max_iter=3000, tol=1e-4, random_state=model_seed),
+        'decision_tree': lambda: DecisionTreeClassifier(random_state=model_seed),
+        'random_forest': lambda: RandomForestClassifier(n_estimators=100, n_jobs=1,
+                                bootstrap=True, random_state=model_seed),
+        'xgboost': lambda: XGBClassifier(n_estimators=100, max_depth=4, learning_rate=0.1,
+                          subsample=1.0, colsample_bytree=1.0, min_child_weight=1,
+                          reg_lambda=1.0, reg_alpha=0.0, scale_pos_weight=1.0,
+                          tree_method='hist', device='cpu', objective='binary:logistic',
+                          eval_metric='logloss', n_jobs=1, random_state=model_seed),
+        'svm': lambda: SVC(kernel='rbf', probability=False, C=1.0, gamma='scale',
+                          cache_size=128, random_state=model_seed),
+    }
+    if name not in factories:
+        raise ValueError(f'Modelo desconocido: {name}')
+    return factories[name]()
+
+
+def make_pipeline(model, balance, params, model_seed, sampler_seed):
+    """Crea un Pipeline nuevo para UN ajuste y valida parámetros del candidato.
+
+    Parameters
+    ----------
+    model, balance : str
+        Claves de familia y estrategia; el balanceo no es un hiperparámetro oculto.
+    params : dict
+        Parámetros del estimador, sin prefijos de Pipeline.
+    model_seed, sampler_seed : int
+        Semillas separadas y persistidas.
+    Returns
+    -------
+    imblearn.pipeline.Pipeline
+        Transformaciones, sampler y clasificador aún no ajustados.
+    """
+    if balance not in BALANCES:
+        raise ValueError('Balanceo desconocido.')
+    forbidden = {'class_weight', 'balance_classes', 'scale_pos_weight', 'random_state', 'n_jobs'}
+    if forbidden.intersection(params):
+        raise ValueError('El candidato intenta cambiar balanceo, semilla o concurrencia.')
+    estimator = make_model(model, model_seed).set_params(**params)
+    preprocessor = ColumnTransformer([
+        ('num', StandardScaler(), NUMERIC),
+        ('cat', OneHotEncoder(handle_unknown='ignore', drop='first', sparse_output=False), CATEGORICAL),
+    ], remainder='drop', sparse_threshold=0.0, verbose_feature_names_out=True)
+    return Pipeline([
+        ('features', HistoricalFeatures()), ('prep', preprocessor),
+        ('sampler', AuditedSampler(balance, sampler_seed, CONFIG['sampler_neighbors'], CONFIG['sampling_strategy'])),
+        ('classifier', FoldWeightedClassifier(estimator, balanced=balance == 'balanced')),
+    ])
+
+
+print('Catálogo definido:', len(CATALOG), 'configuraciones oficiales; ejecución por bloques preparada.')
+```
+
+#### 3.5 Espacios y presupuesto {-}
+
+Cada Grid oficial contiene 24 candidatos, sin truncarlo. Random, TPE y Genético
+usan 24 evaluaciones únicas con los mismos límites y categorías. En continuas pueden
+explorar valores intermedios: la comparación refleja estrategias prácticas, no un
+efecto causal puro del algoritmo sobre soportes idénticos. La escala logarítmica se
+usa para regularización, suavizado, gamma y tasa de aprendizaje.
+
+El piloto solo reduce el Grid de logística/NB a 12 candidatos y usa 12 evaluaciones
+por método. El catálogo oficial y sus espacios permanecen completos. No se cambian
+rangos a partir de los resultados externos del piloto.
+
+```{python cod-016}
+def search_space(model, profile='official'):
+    """Devuelve Grid exhaustivo y dominio común parametrizado para una familia.
+
+    Los intervalos son previos a resultados: exploran regularización en varias
+    escalas y controlan capacidad mediante vecinos, profundidad, hojas y árboles.
+    El perfil técnico reduce únicamente logística/NB para validar los adaptadores.
+    """
+    grids = {
+        'knn': {'n_neighbors':[3,5,11,21,41,81], 'weights':['uniform','distance'], 'p':[1,2]},
+        'naive_bayes': {'var_smoothing':np.logspace(-12,-1,24).tolist()},
+        'logistic': {'C':np.logspace(-3,3,12).tolist(), 'penalty':['l1','l2']},
+        'decision_tree': {'max_depth':[3,6,12,None], 'min_samples_leaf':[1,5,20], 'criterion':['gini','entropy']},
+        'random_forest': {'n_estimators':[100,200,300], 'max_depth':[8,None],
+                          'min_samples_leaf':[1,5], 'max_features':['sqrt',0.7]},
+        'xgboost': {'n_estimators':[100,300], 'max_depth':[2,4,6],
+                    'learning_rate':[0.03,0.1], 'subsample':[0.8,1.]},
+        'svm': {'C':[0.01,0.1,1.,10.,100.,1000.], 'gamma':[0.001,0.01,0.1,1.]},
+    }
+    if profile == 'technical':
+        grids['logistic']['C'] = np.logspace(-3,3,6).tolist()
+        grids['naive_bayes']['var_smoothing'] = np.logspace(-12,-1,12).tolist()
+    elif profile != 'official':
+        raise ValueError('Perfil de espacio desconocido.')
+    grid = grids[model]
+    domain = {k:{'kind':'categorical','values':v} for k,v in grid.items()}
+    if model == 'naive_bayes':
+        domain['var_smoothing'] = {'kind':'log','low':1e-12,'high':1e-1}
+    if model == 'logistic': domain['C'] = {'kind':'log','low':1e-3,'high':1e3}
+    if model == 'xgboost':
+        domain['learning_rate'] = {'kind':'log','low':0.03,'high':0.1}
+        domain['subsample'] = {'kind':'float','low':0.8,'high':1.}
+    if model == 'svm':
+        domain['C'] = {'kind':'log','low':0.01,'high':1000.}
+        domain['gamma'] = {'kind':'log','low':0.001,'high':1.}
+    return {'grid':grid, 'domain':domain}
+
+
+def validate_candidate(params, space):
+    """Rechaza valores fuera del espacio antes de consumir un ajuste."""
+    if set(params) != set(space['domain']):
+        raise ValueError('Las claves del candidato no coinciden con el espacio.')
+    for name, spec in space['domain'].items():
+        value = params[name]
+        if spec['kind'] == 'categorical':
+            if value not in spec['values']: raise ValueError(f'Categoría inválida: {name}')
+        elif not np.isfinite(value) or not spec['low'] <= value <= spec['high']:
+            raise ValueError(f'Valor fuera de rango: {name}={value}')
+
+
+OFFICIAL_SPACES = {m:search_space(m) for m in MODEL_NAMES}
+assert all(len(list(ParameterGrid(s['grid']))) == 24 for s in OFFICIAL_SPACES.values())
+TECHNICAL_EXPERIMENTS = CATALOG.loc[
+    ((CATALOG.model == 'logistic') & (CATALOG.balance == 'none')) |
+    ((CATALOG.model == 'naive_bayes') & (CATALOG.balance == 'balanced'))
+].to_dict('records')
+display(pd.DataFrame([{'model':m,'official_grid_candidates':len(list(ParameterGrid(s['grid'])))}
+                      for m,s in OFFICIAL_SPACES.items()]))
+```
+
+```{python cod-017}
+def collect_predictions(pipeline, X):
+    """Obtiene clases y scores sin ajustar componentes ni confundir márgenes con probabilidades.
+
+    Returns
+    -------
+    tuple
+        predicción, score positivo, probabilidad positiva o None, tipo de score.
+    """
+    prediction = np.asarray(pipeline.predict(X), dtype=int)
+    if hasattr(pipeline, 'predict_proba'):
+        all_prob = pipeline.predict_proba(X)
+        classes = pipeline.classes_
+        prob = np.asarray(all_prob[:, np.flatnonzero(classes == 1)[0]], dtype=float)
+        if not np.isfinite(prob).all() or ((prob < 0) | (prob > 1)).any():
+            raise ValueError('Probabilidades inválidas.')
+        return prediction, prob, prob, 'probability_native'
+    score = np.asarray(pipeline.decision_function(X), dtype=float)
+    if not np.isfinite(score).all():
+        raise ValueError('Score no finito.')
+    return prediction, score, None, 'decision_function'
+
+
+def metrics_from(y, prediction, score, probability=None):
+    """Calcula métricas binarias y ECE de evento con bins uniformes predefinidos.
+
+    None representa probabilidad/métrica no disponible, nunca cero inventado.
+    ECE no se calcula a partir de márgenes SVM. La selección solo utiliza f1_positive.
+    """
+    y = np.asarray(y, dtype=int)
+    tn, fp, fn, tp = confusion_matrix(y, prediction, labels=[0, 1]).ravel()
+    result = {
+        'accuracy': float(accuracy_score(y, prediction)),
+        'precision_positive': float(precision_score(y, prediction, pos_label=1, zero_division=0)),
+        'recall_positive': float(recall_score(y, prediction, pos_label=1, zero_division=0)),
+        'f1_positive': float(f1_score(y, prediction, pos_label=1, zero_division=0)),
+        'roc_auc': float(roc_auc_score(y, score)) if len(np.unique(y)) == 2 else None,
+        'tn': int(tn), 'fp': int(fp), 'fn': int(fn), 'tp': int(tp),
+        'precision_undefined': bool(tp + fp == 0), 'recall_undefined': bool(tp + fn == 0),
+        'brier': None, 'ece': None, 'calibration_bins': [],
+    }
+    if probability is not None:
+        result['brier'] = float(brier_score_loss(y, probability))
+        bins = CONFIG['calibration_bins']
+        indices = np.minimum((probability * bins).astype(int), bins - 1)
+        ece = 0.0
+        for b in range(bins):
+            mask = indices == b
+            count = int(mask.sum())
+            mean_p = float(probability[mask].mean()) if count else None
+            mean_y = float(y[mask].mean()) if count else None
+            if count:
+                ece += count / len(y) * abs(mean_p - mean_y)
+            result['calibration_bins'].append({'bin': b, 'left': b / bins, 'right': (b+1)/bins,
+                'right_closed': b == bins-1, 'n': count, 'mean_probability': mean_p, 'event_rate': mean_y})
+        result['ece'] = float(ece)
+    return result
+
+
+def audit_fit(pipeline, X_fit, y_fit):
+    """Verifica IDs y estadísticas aprendidas contra el subconjunto de ajuste.
+
+    Returns
+    -------
+    dict
+        Evidencia serializable del escalador, encoder, balanceo y pesos.
+    """
+    features = pipeline.named_steps['features']
+    assert np.array_equal(features.fit_ids_, X_fit.index.to_numpy())
+    clean = features.transform(X_fit)
+    prep = pipeline.named_steps['prep']
+    scaler = prep.named_transformers_['num']
+    assert int(scaler.n_samples_seen_) == len(X_fit)
+    np.testing.assert_allclose(scaler.mean_, clean[NUMERIC].mean().to_numpy(), rtol=1e-12, atol=1e-12)
+    encoder = prep.named_transformers_['cat']
+    for col, cats in zip(CATEGORICAL, encoder.categories_):
+        assert set(cats) == set(clean[col])
+    sampler = pipeline.named_steps['sampler']
+    clf = pipeline.named_steps['classifier']
+    assert sampler.n_input_ == len(X_fit) and clf.n_seen_ == sampler.n_output_
+    assert sampler.before_ == np.bincount(np.asarray(y_fit), minlength=2).tolist()
+    expected = len(y_fit) / (2 * np.bincount(np.asarray(y_fit), minlength=2))
+    if clf.balanced:
+        np.testing.assert_allclose(clf.class_weights_, expected)
+    return {'fit_ids_hash': digest(X_fit.index.tolist()), 'n_fit_original': len(X_fit),
+            'n_fit_effective': sampler.n_output_, 'counts_before': sampler.before_,
+            'counts_after': sampler.after_, 'p_transformed': len(prep.get_feature_names_out()),
+            'scaler_mean': scaler.mean_.tolist(), 'class_weights': clf.class_weights_.tolist(),
+            'weight_mechanism': clf.mechanism_}
+
+
+def measured_fit(pipeline, X, y):
+    """Ajusta bajo límite de hilos, mide wall-clock/RSS y conserva advertencias.
+
+    ConvergenceWarning invalida el candidato. Otras advertencias se registran, no se ocultan.
+    """
+    started = perf_counter()
+    with MemoryMonitor() as memory, threadpool_limits(limits=CONFIG['blas_threads']):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            pipeline.fit(X, y)
+    warning_info = [{'category': w.category.__name__, 'message': str(w.message)} for w in caught]
+    if any(issubclass(w.category, ConvergenceWarning) for w in caught):
+        raise RuntimeError('El estimador no convergió: ' + canonical(warning_info))
+    return {'fit_seconds': perf_counter()-started, 'rss_start_bytes': memory.start_bytes,
+            'rss_peak_sampled_bytes': memory.peak_bytes, 'rss_sampling_seconds': memory.interval,
+            'warnings': warning_info, 'audit': audit_fit(pipeline, X, y)}
+```
+
+```{python cod-018}
+def evaluate_inner_fold(model, balance, params, X, y, plan, inner, replicate, path):
+    """Ajusta un candidato en UN fold interno o recupera su checkpoint verificado.
+
+    X/y solo se indexan con fit_pos/eval_pos internos. El externo queda fuera.
+    Cada archivo es exclusivo de este fold, permitiendo hasta dos procesos seguros.
+    Returns
+    -------
+    tuple
+        Evidencia del fold y si se recuperó sin ajuste nuevo.
+    """
+    context = {'model':model, 'balance':balance, 'params':params, 'replicate':replicate,
+               'outer':plan['fold'], 'inner':inner, 'schema':CONFIG['schema_version']}
+    if path.exists():
+        old = checked_read(path)
+        if old['context_hash'] != digest(context): raise RuntimeError('Checkpoint de otro contexto.')
+        return old, True
+    ms = seed_for('model', replicate, plan['fold'], inner['fold'])
+    ss = seed_for('sampler', replicate, plan['fold'], inner['fold'])
+    begin = perf_counter()
+    row = {'context_hash':digest(context), 'model_seed':ms, 'sampler_seed':ss,
+           'inner_fold':inner['fold'], 'status':'running'}
+    try:
+        pipe = make_pipeline(model, balance, params, ms, ss)
+        row.update(measured_fit(pipe, X.iloc[inner['fit_pos']], y.iloc[inner['fit_pos']]))
+        start_pred = perf_counter()
+        with threadpool_limits(limits=CONFIG['blas_threads']):
+            pred, score, prob, kind = collect_predictions(pipe, X.iloc[inner['eval_pos']])
+        row.update(predict_seconds=perf_counter()-start_pred,
+                   metrics=metrics_from(y.iloc[inner['eval_pos']],pred,score,prob),
+                   eval_ids_hash=digest(X.index[inner['eval_pos']].tolist()),status='complete')
+    except Exception as exc:
+        row.update(status='failed',error_type=type(exc).__name__,error=str(exc))
+    row['wall_seconds'] = perf_counter()-begin
+    checked_write(path,row)
+    return row, False
+
+
+class CandidateEvaluator:
+    """Único evaluador de F1 interno para los cuatro optimizadores.
+
+    Mantiene caché solo dentro de la búsqueda. Duplicados no consumen evaluación
+    única; sí consumen propuesta y tiempo. Un fallo conserva todos sus registros,
+    detiene la búsqueda y no equivale a F1=0. Cada sesión de recuperación se conserva.
+    """
+    def __init__(self, model, balance, X, y, plan, replicate, space, budget, folder, n_jobs=1):
+        self.model,self.balance,self.X,self.y = model,balance,X,y
+        self.plan,self.replicate,self.space,self.budget = plan,replicate,space,budget
+        self.folder = Path(folder); self.folder.mkdir(parents=True,exist_ok=True)
+        self.n_jobs = min(n_jobs,2,len(plan['inner']))
+        self.jobs_reason = 'requested'
+        if self.n_jobs > 1 and psutil.virtual_memory().available < 1536*1024**2:
+            self.n_jobs,self.jobs_reason = 1,'insufficient_available_memory_for_two_workers'
+        self.session_id = uuid.uuid4().hex[:12]
+        self.session_path = self.folder/f'history_{self.session_id}.jsonl'
+        self.seen,self.history,self.new_fits,self.recovered_folds = {},[],0,0
+        self.started = perf_counter()
+        self.logical_evaluation_seconds = 0.
+
+    def evaluate(self, params, metadata=None):
+        """Valida, evalúa/recupera y registra una propuesta; nunca consulta el fold externo."""
+        validate_candidate(params,self.space)
+        key = digest(params)
+        duplicate = key in self.seen
+        if not duplicate and len(self.seen) >= self.budget: raise RuntimeError('Presupuesto agotado.')
+        recovered = 0
+        if duplicate:
+            trial = self.seen[key]
+        else:
+            # Rutas cortas para Windows; el hash completo y los parámetros se verifican en el contenido.
+            candidate_folder = self.folder/'evaluations'/key[:16]
+            candidate_folder.mkdir(parents=True,exist_ok=True)
+            begin = perf_counter()
+            tasks = [(inner,candidate_folder/f'inner_{inner["fold"]}.json') for inner in self.plan['inner']]
+            if self.n_jobs == 1:
+                outputs = [evaluate_inner_fold(self.model,self.balance,params,self.X,self.y,
+                    self.plan,inner,self.replicate,path) for inner,path in tasks]
+            else:
+                with joblib.parallel_config(backend='loky',n_jobs=self.n_jobs,inner_max_num_threads=1):
+                    outputs = joblib.Parallel()(joblib.delayed(evaluate_inner_fold)(
+                        self.model,self.balance,params,self.X,self.y,self.plan,inner,self.replicate,path)
+                        for inner,path in tasks)
+            rows = [r for r,_ in outputs]
+            recovered = sum(reused for _,reused in outputs)
+            self.recovered_folds += recovered
+            self.new_fits += len(rows)-recovered
+            trial_file = candidate_folder/'trial.json'
+            trial = {'params':params,'candidate_key':key,'status':'complete',
+                     'inner_f1_mean':float(np.mean([r['metrics']['f1_positive'] for r in rows]))
+                     if all(r['status']=='complete' for r in rows) else None,
+                     'fit_count':len(rows),'fold_seconds_sum':sum(r['wall_seconds'] for r in rows),
+                     'n_jobs':self.n_jobs,'jobs_reason':self.jobs_reason}
+            if trial['inner_f1_mean'] is None: trial['status']='failed'
+            if trial_file.exists():
+                previous = checked_read(trial_file)
+                if previous['params'] != params or previous['inner_f1_mean'] != trial['inner_f1_mean']:
+                    raise RuntimeError('Resultado de checkpoint inconsistente.')
+                trial = previous
+            else:
+                # Si se recuperan solo algunos folds, esto no es un tiempo limpio de evaluación.
+                trial['evaluation_wall_seconds'] = perf_counter()-begin
+                trial['timing_clean'] = recovered == 0
+                checked_write(trial_file,trial)
+            self.logical_evaluation_seconds += trial['evaluation_wall_seconds']
+            self.seen[key] = trial
+        valid = [t['inner_f1_mean'] for t in self.seen.values() if t['status']=='complete']
+        event = {'proposal':len(self.history)+1,'unique_evaluations':len(self.seen),
+                 'params':params,'candidate_key':key,'duplicate':duplicate,
+                 'recovered_folds':recovered,'inner_f1':trial['inner_f1_mean'],
+                 'best_so_far':max(valid) if valid else None,
+                 'session_wall_seconds':perf_counter()-self.started,
+                 'original_evaluation_seconds_accumulated':self.logical_evaluation_seconds,
+                 'metadata':metadata or {},'status':trial['status']}
+        self.history.append(event); append_jsonl(self.session_path,event)
+        if trial['status'] != 'complete':
+            raise RuntimeError(f'Candidato fallido {key}: revisar checkpoints; no se selecciona entre sobrevivientes.')
+        return trial['inner_f1_mean']
+
+    def finished(self):
+        """Comprueba límites de evaluaciones/propuestas antes de pedir otro candidato."""
+        return len(self.seen)>=self.budget or len(self.history)>=10*self.budget
+
+    def result(self, optimizer, optimizer_seed):
+        """Devuelve selección por F1 interno y contadores separados de recuperación."""
+        trials = list(self.seen.values())
+        best = sorted(trials,key=lambda t:(-t['inner_f1_mean'],canonical(t['params'])))[0]
+        complete = len(trials)==self.budget
+        return {'optimizer':optimizer,'optimizer_seed':optimizer_seed,'best_params':best['params'],
+            'best_inner_f1':best['inner_f1_mean'],'status':'complete' if complete else 'incomplete',
+            'stop_reason':'budget_reached' if complete else 'proposal_limit',
+            'n_evaluations':len(trials),'n_proposals':len(self.history),
+            'new_inner_fits':self.new_fits,'recovered_inner_folds':self.recovered_folds,
+            'logical_inner_fits':sum(t['fit_count'] for t in trials),
+            'session_wall_seconds':perf_counter()-self.started,'history_file':self.session_path.name,
+            'timing_clean':self.recovered_folds==0 and all(t['timing_clean'] for t in trials),
+            'n_jobs':self.n_jobs,'jobs_reason':self.jobs_reason}
+```
+
+#### 3.6 Métodos de optimización sobre F1 interno {-}
+
+**Grid** enumera exhaustivamente la malla. **Random** toma categorías uniformemente
+y parámetros continuos en su escala declarada. Ambos ajustan el Pipeline por fold,
+igual que los métodos adaptativos.
+
+**TPE (Optuna)** estima densidades Parzen de configuraciones favorables y restantes
+y propone valores según su cociente, relacionado con la mejora esperada. No es un
+proceso gaussiano ni usa UCB. Se fijan arranque aleatorio, 24 candidatos de adquisición,
+semilla y ausencia de pruning. Los duplicados se registran pero se marcan PRUNED
+en el estudio para no contar una observación repetida como evidencia independiente.
+Tras `max(4, n_startup_trials)` duplicados consecutivos se encola una propuesta
+exploratoria no visitada, registrada como `forced_exploration`. Esta política explícita
+evita detener el método sin consumir el presupuesto en un espacio discreto pequeño.
+
+**Genético (DEAP)** utiliza torneo de tamaño 2, cruce uniforme por pareja 0.8
+(intercambio por gen 0.5), mutación por individuo 0.3 y por gen 1/d, elitismo de uno.
+Los genes continuos se representan en [0,1], en escala log cuando corresponde;
+las categorías se codifican por índices. Se registra cada generación, población,
+fitness y diversidad. Los budgets pequeños prueban el algoritmo, no convergencia global.
+Si una generación no evalúa ningún candidato nuevo, se evalúa un inmigrante no visitado
+y se registra `novelty_restart`, conservando la élite. Estas intervenciones forman parte
+del método implementado; no se atribuyen sus propuestas al criterio adaptativo ordinario.
+
+```{python cod-020}
+def sample_random(domain, rng):
+    """Muestrea el dominio con un generador local reproducible."""
+    params = {}
+    for name,spec in domain.items():
+        if spec['kind']=='categorical':
+            params[name]=spec['values'][int(rng.integers(len(spec['values'])))]
+        elif spec['kind']=='log':
+            params[name]=float(np.exp(rng.uniform(np.log(spec['low']),np.log(spec['high']))))
+        else: params[name]=float(rng.uniform(spec['low'],spec['high']))
+    return params
+
+
+def unseen_candidate(domain, seen, rng):
+    """Exploración de rescate documentada: devuelve un candidato permitido no visitado.
+
+    En dominios finitos se muestrea uniformemente entre los restantes; en continuos
+    se vuelve a muestrear. No usa etiquetas externas ni modifica límites/budget.
+    """
+    if all(s['kind']=='categorical' for s in domain.values()):
+        remaining=[p for p in ParameterGrid({k:s['values'] for k,s in domain.items()}) if digest(p) not in seen]
+        if not remaining: raise RuntimeError('Espacio finito agotado antes del presupuesto solicitado.')
+        return remaining[int(rng.integers(len(remaining)))]
+    for _ in range(1000):
+        params=sample_random(domain,rng)
+        if digest(params) not in seen: return params
+    raise RuntimeError('No se encontró candidato nuevo dentro del dominio.')
+
+
+def run_grid(evaluator, seed):
+    """Grid completo: rechaza un presupuesto que truncaría la malla."""
+    candidates = list(ParameterGrid(evaluator.space['grid']))
+    if len(candidates)!=evaluator.budget: raise ValueError('Grid exige evaluar toda la malla.')
+    for params in candidates: evaluator.evaluate(params,{'method':'grid'})
+    return evaluator.result('grid',seed)
+
+
+def run_random(evaluator, seed):
+    """Random reproducible, con límite de propuestas y caché de duplicados."""
+    rng=np.random.default_rng(seed)
+    while not evaluator.finished():
+        # Muestreo sin reemplazo si todo el dominio es finito: no malgastar propuestas.
+        params=(unseen_candidate(evaluator.space['domain'],evaluator.seen,rng)
+                if all(s['kind']=='categorical' for s in evaluator.space['domain'].values())
+                else sample_random(evaluator.space['domain'],rng))
+        evaluator.evaluate(params,{'method':'random'})
+    return evaluator.result('random',seed)
+
+
+def run_tpe(evaluator, seed, startup):
+    """TPE con ask/tell: solo recibe F1 interno del evaluador común.
+
+    Se reconstruye el estudio en orden determinista al recuperar; checkpoints evitan
+    reajustar. No se interpreta un score cacheado duplicado como un trial nuevo válido.
+    """
+    sampler=optuna.samplers.TPESampler(seed=seed,n_startup_trials=startup,
+                                    n_ei_candidates=24,multivariate=False)
+    study=optuna.create_study(direction='maximize',sampler=sampler,pruner=optuna.pruners.NopPruner())
+    rng=np.random.default_rng(seed); duplicate_streak=0
+    while not evaluator.finished():
+        forced_exploration=duplicate_streak>=max(4,startup)
+        if forced_exploration:
+            study.enqueue_trial(unseen_candidate(evaluator.space['domain'],evaluator.seen,rng))
+        trial=study.ask(); params={}
+        for name,spec in evaluator.space['domain'].items():
+            if spec['kind']=='categorical':
+                params[name]=trial.suggest_categorical(name,spec['values'])
+            else:
+                params[name]=trial.suggest_float(name,spec['low'],spec['high'],log=spec['kind']=='log')
+        duplicate=digest(params) in evaluator.seen
+        try:
+            value=evaluator.evaluate(params,{'method':'bayesian_tpe','optuna_trial':trial.number,
+                                            'forced_exploration':forced_exploration})
+        except Exception:
+            study.tell(trial,state=optuna.trial.TrialState.FAIL)
+            raise
+        if duplicate: study.tell(trial,state=optuna.trial.TrialState.PRUNED)
+        else: study.tell(trial,value)
+        duplicate_streak=duplicate_streak+1 if duplicate else 0
+    study.trials_dataframe().to_csv(evaluator.folder/f'optuna_trials_{evaluator.session_id}.csv',index=False)
+    return evaluator.result('bayesian_tpe',seed)
+```
+
+```{python cod-021}
+if not hasattr(deap_creator,'TelcoFitnessMax'):
+    deap_creator.create('TelcoFitnessMax',deap_base.Fitness,weights=(1.0,))
+if not hasattr(deap_creator,'TelcoIndividual'):
+    deap_creator.create('TelcoIndividual',list,fitness=deap_creator.TelcoFitnessMax)
+
+
+def decode_genes(individual, domain):
+    """Convierte genes válidos a hiperparámetros, preservando escala y categorías."""
+    params={}
+    for gene,(name,spec) in zip(individual,domain.items()):
+        if spec['kind']=='categorical': params[name]=spec['values'][int(gene)]
+        elif spec['kind']=='log':
+            params[name]=float(np.clip(np.exp(np.log(spec['low'])+gene*np.log(spec['high']/spec['low'])),spec['low'],spec['high']))
+        else: params[name]=float(spec['low']+gene*(spec['high']-spec['low']))
+    return params
+
+
+def encode_genes(params,domain):
+    """Codifica un candidato de rescate en el mismo espacio genético permitido."""
+    genes=[]
+    for name,spec in domain.items():
+        if spec['kind']=='categorical': genes.append(spec['values'].index(params[name]))
+        elif spec['kind']=='log': genes.append(float(np.log(params[name]/spec['low'])/np.log(spec['high']/spec['low'])))
+        else: genes.append(float((params[name]-spec['low'])/(spec['high']-spec['low'])))
+    return deap_creator.TelcoIndividual(genes)
+
+
+def population_record(population, domain, generation, evaluator):
+    """Registra diversidad genética, fitness y genotipos por generación.
+
+    Distancia media: desacuerdo 0/1 en categorías y diferencia normalizada en continuas.
+    La fracción de individuos únicos permite detectar colapso de diversidad.
+    """
+    params=[decode_genes(ind,domain) for ind in population]
+    distances=[]
+    for a in range(len(population)):
+        for b in range(a+1,len(population)):
+            components=[float(population[a][j]!=population[b][j]) if spec['kind']=='categorical'
+                        else abs(population[a][j]-population[b][j])
+                        for j,spec in enumerate(domain.values())]
+            distances.append(float(np.mean(components)))
+    scores=[float(ind.fitness.values[0]) for ind in population]
+    return {'generation':generation,'population_size':len(population),'params':params,
+            'fitness':scores,'best_fitness':max(scores),'mean_fitness':float(np.mean(scores)),
+            'unique_fraction':len({digest(p) for p in params})/len(params),
+            'mean_normalized_distance':float(np.mean(distances)) if distances else 0.,
+            'unique_evaluations':len(evaluator.seen),'proposals':len(evaluator.history),
+            'session_wall_seconds':perf_counter()-evaluator.started}
+
+
+def run_genetic(evaluator, seed, population_size):
+    """Evolución DEAP con operadores explícitos y presupuesto de evaluaciones únicas.
+
+    Se preserva/restaura random global porque los operadores DEAP lo utilizan.
+    Una generación parcial por límite de presupuesto conserva élite y mejores padres.
+    Un límite de propuestas evita ciclos de duplicados; no se rellenan con scores falsos.
+    """
+    old_random=random.getstate(); random.seed(seed)
+    restart_rng=np.random.default_rng(seed)
+    domain=evaluator.space['domain']; dimensions=len(domain)
+    population_size=min(population_size,evaluator.budget)
+    toolbox=deap_base.Toolbox()
+    def new_individual():
+        genes=[random.randrange(len(s['values'])) if s['kind']=='categorical' else random.random()
+               for s in domain.values()]
+        return deap_creator.TelcoIndividual(genes)
+    def mutate(ind):
+        for j,spec in enumerate(domain.values()):
+            if random.random()<1/dimensions:
+                ind[j]=random.randrange(len(spec['values'])) if spec['kind']=='categorical' else random.random()
+        return (ind,)
+    toolbox.register('individual',new_individual)
+    toolbox.register('select',deap_tools.selTournament,tournsize=2)
+    toolbox.register('mate',deap_tools.cxUniform,indpb=0.5)
+    toolbox.register('mutate',mutate)
+    toolbox.register('clone',copy.deepcopy)
+    path=evaluator.folder/f'generations_{evaluator.session_id}.jsonl'
+    try:
+        population=[toolbox.individual() for _ in range(population_size)]
+        for ind in population:
+            ind.fitness.values=(evaluator.evaluate(decode_genes(ind,domain),{'method':'genetic','generation':0}),)
+        generation=0
+        append_jsonl(path,population_record(population,domain,generation,evaluator))
+        while not evaluator.finished():
+            generation+=1
+            unique_before=len(evaluator.seen)
+            elite=toolbox.clone(deap_tools.selBest(population,1)[0])
+            offspring=[toolbox.clone(ind) for ind in toolbox.select(population,population_size)]
+            for a,b in zip(offspring[::2],offspring[1::2]):
+                if random.random()<0.8: toolbox.mate(a,b)
+            evaluated=[]
+            for ind in offspring:
+                if evaluator.finished(): break
+                if random.random()<0.3: toolbox.mutate(ind)
+                ind.fitness.values=(evaluator.evaluate(decode_genes(ind,domain),
+                                     {'method':'genetic','generation':generation}),)
+                evaluated.append(ind)
+            # Un reinicio exploratorio evita quedar atrapado en clones y conserva el budget.
+            if len(evaluator.seen)==unique_before and not evaluator.finished():
+                fresh_params=unseen_candidate(domain,evaluator.seen,restart_rng)
+                immigrant=encode_genes(fresh_params,domain)
+                decoded=decode_genes(immigrant,domain)
+                immigrant.fitness.values=(evaluator.evaluate(decoded,{'method':'genetic',
+                    'generation':generation,'novelty_restart':True}),)
+                evaluated.append(immigrant)
+            # La élite garantiza no perder el mejor individuo; los padres completan lotes parciales.
+            population=[elite]+deap_tools.selBest(evaluated+population,population_size-1)
+            append_jsonl(path,population_record(population,domain,generation,evaluator))
+        result=evaluator.result('genetic',seed)
+        result['generation_file']=path.name; result['generations']=generation+1
+        return result
+    finally: random.setstate(old_random)
+
+
+def optimize(evaluator, optimizer, profile):
+    """Despacha el método manteniendo idéntico evaluador, objetivo y splits."""
+    seed=seed_for('optimizer',evaluator.replicate,evaluator.plan['fold'],
+                  MODEL_NAMES.index(evaluator.model),BALANCES.index(evaluator.balance),OPTIMIZERS.index(optimizer))
+    if optimizer=='grid': return run_grid(evaluator,seed)
+    if optimizer=='random': return run_random(evaluator,seed)
+    if optimizer=='bayesian_tpe': return run_tpe(evaluator,seed,profile['tpe_startup'])
+    if optimizer=='genetic': return run_genetic(evaluator,seed,profile['population'])
+    raise ValueError('Optimizador desconocido.')
+```
+
+#### 3.7 Nested CV, bloques y recuperación {-}
+
+Cada búsqueda ve solo el entrenamiento externo, elige parámetros por F1 interno
+y reajusta el Pipeline elegido antes de evaluar el fold externo. Se conservan
+los mismos splits entre métodos y entre semillas; las réplicas modifican aleatoriedad
+de búsqueda, modelo y remuestreo, no se interpretan como datasets independientes.
+
+Cada fold interno es un checkpoint con hash. La recuperación reconstruye la secuencia
+de propuestas usando la misma semilla y reutiliza sus resultados. Se separan tiempos
+originales, tiempo de la sesión recuperada y número real de ajustes nuevos. Una sesión
+recuperada no se presenta como una búsqueda limpia más rápida.
+
+```{python cod-023}
+def prepare_run(X, y, profile, experiments):
+    """Prepara el protocolo completo e inmutable, independiente del bloque solicitado.
+
+    Todos los IDs, espacios y réplicas pertenecen a la corrida; max_units solo decide
+    cuánto ejecutar ahora, no modifica su identidad ni elimina combinaciones.
+    """
+    plans=make_splits(X,y,profile['outer_folds'],profile['inner_folds'])
+    spaces={m:search_space(m,profile['space_profile']) for m in sorted({e['model'] for e in experiments})}
+    protocol={'config':CONFIG,'profile':profile,'input_hashes':INPUT_HASHES,'versions':VERSIONS,
+              'python':platform.python_version(),'code_hash':notebook_code_hash(),
+              'lock_hash':file_hash(ROOT/'requirements-modelado.txt'),'splits':plans,
+              'data_ids':X.index.tolist(),'experiments':experiments,'spaces':spaces,
+              'protected_hashes':EXPECTED_PROTECTED,
+              'seed_policy':'fixed_partitions_variable_algorithm_seeds'}
+    folder=ROOT/'resultados_modelado'/('oficial' if profile['purpose']=='official' else 'fase3_tecnica')
+    store=RecoverableStore(folder,protocol,resume=True)
+    if not (store.path/'source_snapshot.json').exists():
+        # Guarda el código, no solo su hash; permite recuperar exactamente la versión ejecutada.
+        nb=json.loads((ROOT/'MODELADO_AVANZADO.ipynb').read_text(encoding='utf-8'))
+        write_json(store.path/'source_snapshot.json',[{'id':c['id'],'source':c['source']} for c in nb['cells']])
+        write_json(store.path/'catalog.json',experiments)
+        write_json(store.path/'splits.json',plans)
+        (store.path/'requirements.txt').write_bytes((ROOT/'requirements-modelado.txt').read_bytes())
+    return store,plans,spaces
+
+
+def fit_calibrated_variant(model,balance,params,X_fit,y_fit,X_eval,replicate,outer_fold,folds):
+    """Obtiene probabilidades sigmoid con CV de entrenamiento sobre el Pipeline completo.
+
+    El calibrador ve clientes reales sin pesos. Cada fit del Pipeline vuelve a calcular
+    pesos y remuestreo exclusivamente en su entrenamiento. La selección de parámetros
+    ocurrió en entrenamiento externo; la generalización se mide SOLO en evaluación externa.
+    """
+    ms=seed_for('model',replicate,outer_fold,999)
+    ss=seed_for('sampler',replicate,outer_fold,999)
+    base_pipe=make_pipeline(model,balance,params,ms,ss)
+    cs=seed_for('calibration',replicate,outer_fold)
+    cv=list(StratifiedKFold(folds,shuffle=True,random_state=cs).split(X_fit,y_fit))
+    calibrator=CalibratedClassifierCV(estimator=base_pipe,method='sigmoid',cv=cv,
+                                    ensemble=False,n_jobs=1)
+    started=perf_counter()
+    with MemoryMonitor() as memory, threadpool_limits(limits=1):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always'); calibrator.fit(X_fit,y_fit)
+        if any(issubclass(w.category,ConvergenceWarning) for w in caught):
+            raise RuntimeError('No convergencia durante calibración; unidad incompleta.')
+        probability=calibrator.predict_proba(X_eval)[:,np.flatnonzero(calibrator.classes_==1)[0]]
+    if not np.isfinite(probability).all() or ((probability<0)|(probability>1)).any():
+        raise ValueError('Probabilidades calibradas inválidas.')
+    info={'method':'sigmoid','ensemble':False,'seed':cs,'n_fits':folds+1,
+          'wall_seconds':perf_counter()-started,'rss_peak_sampled_bytes':memory.peak_bytes,
+          'warnings':[{'category':w.category.__name__,'message':str(w.message)} for w in caught],
+          'splits':[{'fit_ids':X_fit.index[a].tolist(),'calibration_ids':X_fit.index[b].tolist()} for a,b in cv]}
+    return calibrator,probability,info
+
+
+def run_nested_block(X,y,profile,experiments,max_units=None,only_models=None):
+    """Ejecuta hasta max_units unidades externas, conservando TODO el catálogo oficial.
+
+    max_units=None ejecuta todas las unidades pendientes del perfil recibido. El uso
+    oficial está desactivado por defecto en la celda de control. Los métodos no pueden
+    sustituir modelos/balanceos. Un fallo conserva checkpoints y detiene este bloque.
+    """
+    store,plans,spaces=prepare_run(X,y,profile,experiments)
+    actions=[]; started_units=0
+    with store.writer():
+        for replicate in profile['replicates']:
+            for exp in experiments:
+                if only_models and exp['model'] not in only_models: continue
+                for plan in plans:
+                    uid='u_'+digest({'experiment_id':exp['experiment_id'],'replicate':replicate,'fold':plan['fold']})[:16]
+                    old=store.completed(uid)
+                    if old is not None:
+                        actions.append({'unit_id':uid,'action':'reused','new_fits':0}); continue
+                    if max_units is not None and started_units>=max_units:
+                        return store,actions
+                    started_units+=1
+                    attempt=store.working_attempt(uid)
+                    session_id=uuid.uuid4().hex[:12]; session_start=perf_counter()
+                    append_jsonl(attempt/'sessions.jsonl',{'session':session_id,'event':'started',
+                        'utc':datetime.now(timezone.utc).isoformat()})
+                    try:
+                        evaluator=CandidateEvaluator(exp['model'],exp['balance'],X,y,plan,replicate,
+                            spaces[exp['model']],profile['budget'],attempt/'search',profile['n_jobs'])
+                        search_file=attempt/'search_result.json'
+                        if search_file.exists():
+                            search=checked_read(search_file)
+                            new_inner=0
+                        else:
+                            search=optimize(evaluator,exp['optimizer'],profile)
+                            if search['status']!='complete':
+                                raise RuntimeError('Búsqueda incompleta: '+search['stop_reason'])
+                            checked_write(search_file,search); new_inner=evaluator.new_fits
+                        fit_pos,eval_pos=plan['fit_pos'],plan['eval_pos']
+                        outer_checkpoint=attempt/'outer_checkpoint.json'
+                        new_outer=0
+                        if outer_checkpoint.exists():
+                            checkpoint=checked_read(outer_checkpoint)
+                            for name,expected in checkpoint['files'].items():
+                                if file_hash(attempt/name)!=expected: raise RuntimeError('Artefacto externo dañado.')
+                            fit_info=checkpoint['fit_info']; predict_seconds=checkpoint['predict_seconds']
+                            predictions=pd.read_csv(attempt/'predictions.csv')
+                        else:
+                            ms=seed_for('model',replicate,plan['fold'],999)
+                            ss=seed_for('sampler',replicate,plan['fold'],999)
+                            pipe=make_pipeline(exp['model'],exp['balance'],search['best_params'],ms,ss)
+                            fit_info=measured_fit(pipe,X.iloc[fit_pos],y.iloc[fit_pos]); new_outer=1
+                            start_predict=perf_counter()
+                            with threadpool_limits(limits=1):
+                                pred,score,prob,kind=collect_predictions(pipe,X.iloc[eval_pos])
+                            predict_seconds=perf_counter()-start_predict
+                            predictions=pd.DataFrame({'row_id':X.index[eval_pos], 'y_true':y.iloc[eval_pos].to_numpy(),
+                                'y_pred':pred,'score_positive':score,'score_type':kind,
+                                'probability_native':prob if prob is not None else np.nan,
+                                'unit_id':uid,'outer_fold':plan['fold'],'replicate':replicate,
+                                'purpose':profile['purpose'],'variant':'principal'})
+                            predictions.to_csv(attempt/'predictions.csv',index=False)
+                            with (attempt/'pipeline.pkl').open('wb') as stream: cloudpickle.dump(pipe,stream)
+                            write_json(attempt/'features.json',{'names':pipe.named_steps['prep'].get_feature_names_out().tolist(),
+                                'classes':pipe.classes_.tolist(),'train_ids':plan['fit_ids'],'eval_ids':plan['eval_ids']})
+                            checked_write(outer_checkpoint,{'fit_info':fit_info,'predict_seconds':predict_seconds,
+                                'files':{name:file_hash(attempt/name) for name in ['predictions.csv','pipeline.pkl','features.json']}})
+                        # La calibración es una rama complementaria predefinida, no cambia el ganador F1.
+                        cal_checkpoint=attempt/'calibration_checkpoint.json'; new_cal=0
+                        if cal_checkpoint.exists():
+                            cal=checked_read(cal_checkpoint)
+                            for name,expected in cal['files'].items():
+                                if file_hash(attempt/name)!=expected: raise RuntimeError('Calibración dañada.')
+                            cal_info=cal['info']; calibrated_predictions=pd.read_csv(attempt/'calibrated_predictions.csv')
+                        else:
+                            calibrated,p_cal,cal_info=fit_calibrated_variant(exp['model'],exp['balance'],search['best_params'],
+                                X.iloc[fit_pos],y.iloc[fit_pos],X.iloc[eval_pos],replicate,plan['fold'],profile['calibration_folds'])
+                            new_cal=cal_info['n_fits']
+                            calibrated_predictions=pd.DataFrame({'row_id':X.index[eval_pos], 'probability_sigmoid':p_cal,
+                                'y_pred_sigmoid':(p_cal>0.5).astype(int),'variant':'sigmoid'})
+                            calibrated_predictions.to_csv(attempt/'calibrated_predictions.csv',index=False)
+                            with (attempt/'calibrated.pkl').open('wb') as stream: cloudpickle.dump(calibrated,stream)
+                            checked_write(cal_checkpoint,{'info':cal_info,'files':{name:file_hash(attempt/name)
+                                for name in ['calibrated_predictions.csv','calibrated.pkl']}})
+                        pred=predictions
+                        probability=pred.probability_native.to_numpy() if pred.probability_native.notna().all() else None
+                        pc=calibrated_predictions.probability_sigmoid.to_numpy()
+                        result={'unit_id':uid,**exp,'replicate':replicate,'outer_fold':plan['fold'],
+                            'status':'complete','purpose':profile['purpose'],'best_params':search['best_params'],
+                            'best_inner_f1':search['best_inner_f1'],'search':search,
+                            'model_seed':seed_for('model',replicate,plan['fold'],999),
+                            'sampler_seed':seed_for('sampler',replicate,plan['fold'],999),
+                            'outer_metrics':metrics_from(pred.y_true,pred.y_pred,pred.score_positive,probability),
+                            'calibrated_metrics':metrics_from(pred.y_true,calibrated_predictions.y_pred_sigmoid,pc,pc),
+                            'refit':fit_info,'predict_seconds':predict_seconds,'calibration':cal_info,
+                            'logical_total_fits':search['logical_inner_fits']+1+cal_info['n_fits'],
+                            'prediction_file':str((attempt/'predictions.csv').relative_to(store.path)),
+                            'artifact_file':str((attempt/'pipeline.pkl').relative_to(store.path)),
+                            'attempt_path':str(attempt.relative_to(store.path))}
+                        append_jsonl(attempt/'sessions.jsonl',{'session':session_id,'event':'completed',
+                            'wall_seconds':perf_counter()-session_start,'new_inner_fits':new_inner,
+                            'new_outer_fits':new_outer,'new_calibration_fits':new_cal})
+                        write_json(attempt/'result.json',result); store.finish(uid,attempt)
+                        actions.append({'unit_id':uid,'action':'executed','new_fits':new_inner+new_outer+new_cal})
+                    except Exception as exc:
+                        append_jsonl(attempt/'sessions.jsonl',{'session':session_id,'event':'failed',
+                            'wall_seconds':perf_counter()-session_start,'error_type':type(exc).__name__,'error':str(exc)})
+                        raise
+    return store,actions
+
+
+def read_completed(store):
+    """Carga solo unidades selladas; no confunde trabajo parcial con resultados completos."""
+    return [store.completed(p.parent.name) for p in sorted(store.path.glob('*/complete.json'))]
+```
+
+#### 3.8 Probabilidades y calibración complementaria {-}
+
+Sigmoid se ajusta con CV dentro del entrenamiento externo sobre el **Pipeline completo**,
+con `ensemble=False`. Las observaciones usadas para calibrar no se remuestrean ni se
+ponderan por clase. El estimador se reajusta al final sobre todo entrenamiento externo.
+Los hiperparámetros fueron seleccionados previamente dentro de ese entrenamiento; esta CV
+de calibración no constituye una nueva evaluación independiente.
+
+El ranking principal sigue usando las predicciones nativas. Se guardan por separado
+probabilidades sigmoid y métricas complementarias. El margen de SVM permite ROC-AUC,
+pero Brier/ECE nativos son no definidos. ECE usa diez bins uniformes y probabilidad
+del evento Churn=1; no se confunde con confianza de la clase predicha.
+
+```{python cod-025}
+def audit_core(X, y):
+    """Comprueba propiedades críticas con datos sintéticos y una muestra real pequeña.
+
+    No mide superioridad predictiva: prueba votos KNN, pesos, aislamiento y clonación.
+    Returns
+    -------
+    list of dict
+        Evidencia de controles aprobados; una violación interrumpe la ejecución.
+    """
+    checks = []
+    with threadpool_limits(limits=CONFIG['blas_threads']):
+        # Incluye duplicados exactos y empates: los casos difíciles del voto KNN.
+        toy_X = np.array([[0.], [0.], [1.], [2.], [3.], [4.]])
+        toy_y = np.array([0, 1, 0, 0, 0, 1])
+        queries = np.array([[0.], [0.5], [2.5], [4.]])
+        for weights in ('uniform', 'distance'):
+            for p in (1, 2):
+                native = KNeighborsClassifier(n_neighbors=3, weights=weights, p=p, algorithm='brute').fit(toy_X, toy_y)
+                adapted = ClassWeightedKNN(3, weights, p, False).fit(toy_X, toy_y)
+                np.testing.assert_allclose(native.predict_proba(queries), adapted.predict_proba(queries), atol=1e-12)
+                np.testing.assert_array_equal(native.predict(queries), adapted.predict(queries))
+        balanced_knn = ClassWeightedKNN(3, 'distance', 2, True).fit(toy_X, toy_y)
+        np.testing.assert_allclose(balanced_knn.class_weights_, [0.75, 1.5])
+        np.testing.assert_allclose(balanced_knn.predict_proba([[0.]]), [[1/3, 2/3]])
+        checks.append({'check': 'knn_native_equivalence_and_exact_zero_weighted_vote', 'status': 'passed'})
+
+        # Dos fit con prevalencias distintas deben recalcular pesos, no heredar los anteriores.
+        wrapper = FoldWeightedClassifier(GaussianNB(), True).fit(toy_X, toy_y)
+        np.testing.assert_allclose(wrapper.class_weights_, [0.75, 1.5])
+        wrapper.fit(toy_X, np.array([0, 0, 0, 1, 1, 1]))
+        np.testing.assert_allclose(wrapper.class_weights_, [1., 1.])
+        checks.append({'check': 'weights_recomputed_each_fit', 'status': 'passed'})
+
+        # La validación tiene una categoría exclusiva y un valor extremo: no deben entrar al fit.
+        fit_pos, val_pos = train_test_split(np.arange(len(X)), train_size=120, stratify=y,
+                                           random_state=seed_for('test'))
+        train, target = X.iloc[fit_pos].copy(), y.iloc[fit_pos].copy()
+        heldout = X.iloc[val_pos[:12]].copy()
+        heldout['PaymentMethod'] = 'AUDIT_UNSEEN_CATEGORY'
+        heldout['MonthlyCharges'] = 1e9
+        pipe = make_pipeline('logistic', 'smote', {'C': 1.0}, 101, 102)
+        pipe.fit(train, target)
+        evidence = audit_fit(pipe, train, target)
+        means_before = pipe.named_steps['prep'].named_transformers_['num'].mean_.copy()
+        with warnings.catch_warnings(record=True):
+            pred, score, prob, _ = collect_predictions(pipe, heldout)
+        assert len(pred) == len(heldout)
+        np.testing.assert_array_equal(means_before, pipe.named_steps['prep'].named_transformers_['num'].mean_)
+        payment_index = CATEGORICAL.index('PaymentMethod')
+        assert 'AUDIT_UNSEEN_CATEGORY' not in pipe.named_steps['prep'].named_transformers_['cat'].categories_[payment_index]
+        assert not hasattr(clone(pipe).named_steps['features'], 'fit_ids_')
+        checks.append({'check': 'heldout_not_fitted_or_resampled', 'status': 'passed', 'evidence': evidence})
+
+        # Contrato de creación/clonación de todo el catálogo, sin entrenar 112 combinaciones.
+        for model, balance in product(MODEL_NAMES, BALANCES):
+            fresh = clone(make_pipeline(model, balance, {}, 201, 202))
+            assert not hasattr(fresh.named_steps['classifier'], 'estimator_')
+        checks.append({'check': '28_model_balance_pipelines_cloneable', 'status': 'passed'})
+
+        # Comprobación mínima de cada adaptador balanceado; no es Nested CV oficial.
+        for model in MODEL_NAMES:
+            params = {'n_estimators': 5} if model in ('random_forest', 'xgboost') else {}
+            small = make_pipeline(model, 'balanced', params, 301, 302)
+            small.fit(train, target)
+            audit_fit(small, train, target)
+            pred, score, prob, kind = collect_predictions(small, X.iloc[val_pos[:12]])
+            assert len(pred) == 12 and np.isfinite(score).all()
+            if model == 'svm':
+                assert prob is None and kind == 'decision_function'
+            checks.append({'check': f'balanced_adapter_{model}', 'status': 'passed'})
+    return checks
+
+
+CORE_CHECKS = audit_core(X_pilot, y_pilot)
+display(pd.DataFrame(CORE_CHECKS)[['check', 'status']])
+```
+
+```{python cod-026}
+def check_28_pairs(X,y):
+    """Prueba un ajuste por par modelo/balanceo en clientes reales de desarrollo.
+
+    Se usa un candidato pequeño solo para factibilidad, nunca como resultado oficial.
+    La prueba conserva tiempos, parámetros, pesos, conteos y hashes de los IDs.
+    """
+    positions,heldout=train_test_split(np.arange(len(X)),train_size=160,stratify=y,
+                                     random_state=seed_for('test',28))
+    records=[]
+    for model,balance in product(MODEL_NAMES,BALANCES):
+        params={'n_estimators':5} if model in ('random_forest','xgboost') else {}
+        pipe=make_pipeline(model,balance,params,901,902)
+        record={'model':model,'balance':balance,'params':params,'purpose':'feasibility_only',
+                'model_seed':901,'sampler_seed':902,'fit_ids':X.index[positions].tolist(),
+                'eval_ids':X.index[heldout[:20]].tolist()}
+        record.update(measured_fit(pipe,X.iloc[positions],y.iloc[positions]))
+        with threadpool_limits(limits=1):
+            pred,score,prob,kind=collect_predictions(pipe,X.iloc[heldout[:20]])
+        assert len(pred)==20 and np.isfinite(score).all()
+        record.update(status='passed',score_type=kind)
+        records.append(record)
+    # Calibración: comprobar compatibilidad de SVM sin probabilidad y los adaptadores especiales.
+    for model in ('svm','knn','xgboost'):
+        params={'n_estimators':5} if model=='xgboost' else {}
+        cal,prob,info=fit_calibrated_variant(model,'balanced',params,X.iloc[positions],y.iloc[positions],
+                                          X.iloc[heldout[:20]],0,0,2)
+        assert len(prob)==20 and np.isfinite(prob).all()
+        records.append({'model':model,'check':'sigmoid_compatibility','status':'passed',
+                        'purpose':'feasibility_only','info':info})
+    return records
+
+
+FEASIBILITY=check_28_pairs(X_pilot,y_pilot) if RUN_TECHNICAL else []
+if FEASIBILITY: print('Factibilidad:',28,'pares y 3 compatibilidades de calibración verificadas.')
+```
+
+```{python cod-027}
+if RUN_TECHNICAL:
+    STORE3,ACTIONS3=run_nested_block(X_pilot,y_pilot,TECHNICAL_PROFILE,TECHNICAL_EXPERIMENTS)
+    RESULTS3=read_completed(STORE3)
+    # Controles separados de las unidades; conservan datos reales y no forman nuevos tratamientos.
+    checked_write(STORE3.path/f'feasibility_{uuid.uuid4().hex[:8]}.json',FEASIBILITY)
+    display(pd.DataFrame(ACTIONS3))
+    print('Corrida técnica:',STORE3.path)
+else:
+    RESULTS3=[]
+```
+
+```{python cod-028}
+def verify_phase3(store,X,y,expected_configurations,expected_folds):
+    """Audita métricas desde CSV, separación de selección, checkpoints y cobertura OOF."""
+    results=read_completed(store); frames=[]
+    assert len(results)==expected_configurations*expected_folds
+    for result in results:
+        attempt=store.path/result['attempt_path']
+        pred=pd.read_csv(attempt/'predictions.csv')
+        assert pred.row_id.is_unique and set(pred.row_id).isdisjoint(test_ids)
+        np.testing.assert_array_equal(pred.y_true,y.loc[pred.row_id])
+        prob=pred.probability_native.to_numpy() if pred.probability_native.notna().all() else None
+        recomputed=metrics_from(pred.y_true,pred.y_pred,pred.score_positive,prob)
+        for metric in ('accuracy','precision_positive','recall_positive','f1_positive','roc_auc','brier','ece'):
+            if recomputed[metric] is not None:
+                np.testing.assert_allclose(recomputed[metric],result['outer_metrics'][metric],atol=1e-12)
+        # Reconstruir el ganador exclusivamente de las métricas internas persistidas.
+        trials=[checked_read(p) for p in (attempt/'search/evaluations').glob('*/trial.json')]
+        best=sorted(trials,key=lambda t:(-t['inner_f1_mean'],canonical(t['params'])))[0]
+        assert best['params']==result['best_params'] and best['inner_f1_mean']==result['best_inner_f1']
+        history=[json.loads(line) for line in (attempt/'search'/result['search']['history_file']).read_text(encoding='utf-8').splitlines()]
+        assert np.all(np.diff([e['best_so_far'] for e in history])>=0)
+        assert sum(not e['duplicate'] for e in history)==result['search']['n_evaluations']
+        with (attempt/'pipeline.pkl').open('rb') as stream: pipe=cloudpickle.load(stream)
+        with (attempt/'calibrated.pkl').open('rb') as stream: cal=cloudpickle.load(stream)
+        with threadpool_limits(limits=1):
+            np.testing.assert_array_equal(pipe.predict(X.loc[pred.row_id]),pred.y_pred)
+            pc=cal.predict_proba(X.loc[pred.row_id])[:,1]
+        saved_cal=pd.read_csv(attempt/'calibrated_predictions.csv')
+        np.testing.assert_array_equal(saved_cal.row_id,pred.row_id)
+        np.testing.assert_allclose(pc,saved_cal.probability_sigmoid,atol=1e-12)
+        cm=metrics_from(pred.y_true,saved_cal.y_pred_sigmoid,pc,pc)
+        for metric in ('f1_positive','roc_auc','brier','ece'):
+            np.testing.assert_allclose(cm[metric],result['calibrated_metrics'][metric],atol=1e-12)
+        # Cada fold de calibración divide solo el entrenamiento externo, nunca su evaluación.
+        feature_info=json.loads((attempt/'features.json').read_text(encoding='utf-8'))
+        fit_ids=set(feature_info['train_ids'])
+        for split in result['calibration']['splits']:
+            assert set(split['fit_ids']).isdisjoint(split['calibration_ids'])
+            assert set(split['fit_ids'])|set(split['calibration_ids'])==fit_ids
+            assert fit_ids.isdisjoint(pred.row_id)
+        pred['experiment_id']=result['experiment_id']; frames.append(pred)
+    combined=pd.concat(frames,ignore_index=True)
+    for _,group in combined.groupby(['experiment_id','replicate']):
+        assert len(group)==len(X) and group.row_id.is_unique and set(group.row_id)==set(X.index)
+    return {'status':'passed','purpose':'phase3_technical','complete_outer_units':len(results),
+            'configurations':expected_configurations,'candidate_evaluations':sum(r['search']['n_evaluations'] for r in results),
+            'logical_inner_fits':sum(r['search']['logical_inner_fits'] for r in results),
+            'logical_total_fits':sum(r['logical_total_fits'] for r in results),
+            'prediction_rows':len(combined),'selection_internal_only':True,
+            'calibration_isolated':True,'metrics_recomputed':True,'test_excluded':True}
+
+
+if RESULTS3:
+    AUDIT3=verify_phase3(STORE3,X_pilot,y_pilot,len(TECHNICAL_EXPERIMENTS),TECHNICAL_PROFILE['outer_folds'])
+    _,resume_actions=run_nested_block(X_pilot,y_pilot,TECHNICAL_PROFILE,TECHNICAL_EXPERIMENTS)
+    assert all(a['action']=='reused' and a['new_fits']==0 for a in resume_actions)
+    AUDIT3['resume_new_fits']=0
+    for name,expected in EXPECTED_PROTECTED.items(): assert file_hash(ROOT/name).upper()==expected
+    AUDIT3['protected_notebooks_unchanged']=True
+    checked_write(STORE3.path/'audit_report.json',AUDIT3)
+    display(pd.Series(AUDIT3).to_frame('resultado'))
+```
+
+### 4. Comparación de métodos de optimización {-}
+
+Las siguientes curvas son **diagnósticos técnicos de F1 interno** del primer fold,
+no estimaciones externas de desempeño ni resultados oficiales. El mejor F1 acumulado
+se muestra contra evaluaciones únicas y contra tiempo observado en una sesión limpia.
+Si la búsqueda fue recuperada, no se utiliza su tiempo abreviado para comparar eficiencia.
+La diversidad del genético se registra aunque el presupuesto no permita inferir convergencia.
+
+```{python cod-030}
+def plot_technical_traces(store,results):
+    """Genera diagnósticos desde registros; no reentrena y no selecciona modelos."""
+    fig,axes=plt.subplots(1,3,figsize=(15,4))
+    for r in results:
+        if r['model']!='logistic' or r['outer_fold']!=0: continue
+        folder=store.path/r['attempt_path']/'search'
+        history=pd.read_json(folder/r['search']['history_file'],lines=True)
+        novel=history.loc[~history.duplicate]
+        axes[0].step(novel.unique_evaluations,novel.best_so_far,where='post',label=r['optimizer'])
+        if r['search']['timing_clean']:
+            axes[1].step(history.session_wall_seconds,history.best_so_far,where='post',label=r['optimizer'])
+        if r['optimizer']=='genetic':
+            generations=pd.read_json(folder/r['search']['generation_file'],lines=True)
+            axes[2].plot(generations.generation,generations.unique_fraction,'o-',label='Fracción única')
+            axes[2].plot(generations.generation,generations.mean_normalized_distance,'s-',label='Distancia media')
+    for ax,title,xlabel in zip(axes,['Anytime técnico','Tiempo limpio observado','Diversidad genética'],
+                              ['Evaluaciones únicas','Segundos de búsqueda','Generación']):
+        ax.set(title=title,xlabel=xlabel); ax.legend(fontsize=8); ax.grid(alpha=.2)
+    axes[0].set_ylabel('Mejor F1 interno'); axes[1].set_ylabel('Mejor F1 interno')
+    axes[2].set_ylim(-.02,1.02)
+    fig.suptitle('Piloto de infraestructura — sin conclusiones oficiales',fontsize=12)
+    fig.tight_layout(); fig.savefig(store.path/'technical_traces.png',dpi=140)
+    plt.show()
+
+
+if RESULTS3: plot_technical_traces(STORE3,RESULTS3)
+```
+
+#### 4.1 Preparación de las 112 combinaciones oficiales {-}
+
+El catálogo completo se ejecutará con las 5.634 filas de desarrollo. Una réplica con
+5 folds externos y 24 candidatos × 3 internos implica 40.320 ajustes internos,
+560 refits principales y 2.240 ajustes de calibración: 43.120 ajustes planificados.
+Tres realizaciones suman 129.360, antes de recuperación/duplicados/fallos.
+Son conteos, no estimaciones de duración. No se reduce el universo experimental.
+
+Se reutilizan estructuras y splits; se evita repetir candidatos de una búsqueda;
+se guarda cada fold interno; se limita la concurrencia a dos procesos cuando la RAM
+disponible lo permite. Los bloques no cambian el protocolo ni la composición del catálogo.
+El siguiente hito será medir coste representativo y comenzar la ejecución oficial por
+bloques tras el punto de control, sin sustituirla por estas pruebas.
+
+```{python cod-032}
+def execute_official_block(max_units=2,only_models=None):
+    """Ejecuta un bloque del catálogo oficial solo con autorización explícita en CONFIG.
+
+    max_units limita trabajo de esta sesión; no elimina unidades pendientes.
+    only_models permite repartir trabajo por familia manteniendo manifiesto de 112.
+    Los datos siempre son todo desarrollo y la reanudación conserva el protocolo.
+    """
+    if not RUN_OFFICIAL:
+        raise RuntimeError('Fase 3: corrida oficial preparada, aún no activada para ejecución.')
+    return run_nested_block(X_dev,y_dev,OFFICIAL_PROFILE,CATALOG.to_dict('records'),
+                            max_units=max_units,only_models=only_models)
+
+
+assert len(CATALOG)==112
+print('Universo oficial: 112 configuraciones. Preparado; pendiente de Fase 4.')
+print('Unidades externas planificadas:',len(CATALOG)*OFFICIAL_PROFILE['outer_folds']*len(OFFICIAL_PROFILE['replicates']))
+```
+
+### 5. Resultados finales y conclusiones {-}
+
+**Pendiente de resultados oficiales.** Las pruebas actuales respaldan funcionamiento
+del software en los casos ensayados. No establecen superioridad de modelos ni optimizadores.
+La evaluación completa, intervalos, inferencia estadística y SHAP/LIME se desarrollarán
+en sus fases. La dependencia de folds de un único dataset sigue condicionando
+Friedman/Nemenyi/DeLong; los controles de software no resuelven ese supuesto.

@@ -7,8 +7,9 @@ rmd_files:
   - 01-eda.Rmd
   - 02-preprocesamiento.Rmd
   - 03-modelado-avanzado.Rmd
-  - 04-paper.Rmd
-  - 05-guia-repositorio.Rmd
+  - 04-codigo-experimento.Rmd
+  - 05-paper.Rmd
+  - 06-guia-repositorio.Rmd
 language:
   label:
     fig: !expr function(i) paste0("Fig. ", i, " ")

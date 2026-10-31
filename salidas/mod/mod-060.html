@@ -1,0 +1,8 @@
+<div class="eda-table" id="ma-tabla-30"><span class="eda-table-title">1.8 S&#xed;ntesis de los resultados de calibraci&#xf3;n &#xb7; tabla 2</span><input aria-label="Buscar en 1.8 S&#xed;ntesis de los resultados de calibraci&#xf3;n &#xb7; tabla 2" placeholder="Buscar en esta tabla&#x2026;"><table class="dataframe"><thead><tr><th>Comparaci&#xf3;n</th><th>Configuraciones</th><th>Total</th></tr></thead><tbody><tr><td>Sigmoid mejora a nativa (Brier y ECE)</td><td>80</td><td>96</td></tr><tr><td>Isot&#xf3;nica mejora a nativa (Brier y ECE)</td><td>84</td><td>96</td></tr><tr><td>Isot&#xf3;nica con menor Brier que sigmoid</td><td>67</td><td>112</td></tr><tr><td>Isot&#xf3;nica con menor ECE que sigmoid</td><td>74</td><td>112</td></tr></tbody></table></div><script>(function(){const root=document.getElementById('ma-tabla-30');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='\u2014'&&y!=='\u2014'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script><img src="salidas/img/mod-060-0.png" alt="Figura generada por la celda mod-060">
