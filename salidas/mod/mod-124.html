@@ -1,1 +1,8 @@
-<img src="salidas/img/mod-124-0.png" alt="Figura generada por la celda mod-124">
+<div class="eda-table" id="ma-tabla-41"><span class="eda-table-title">Tama&#xf1;o del efecto en el resto de comparaciones</span><input aria-label="Buscar en Tama&#xf1;o del efecto en el resto de comparaciones" placeholder="Buscar en esta tabla&#x2026;"><table class="dataframe"><thead><tr><th>magnitud</th><th>pares</th><th>cliff_min</th><th>cliff_max</th><th>delta_f1_min</th><th>delta_f1_max</th></tr></thead><tbody><tr><td>grande</td><td>31</td><td>1.000000</td><td>1.000000</td><td>0.062890</td><td>0.075585</td></tr></tbody></table></div><script>(function(){const root=document.getElementById('ma-tabla-41');
+    const body=root.querySelector('tbody'),input=root.querySelector('input');
+    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
+    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
+    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
+    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
+    const c=(x!=='\u2014'&&y!=='\u2014'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
+    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>

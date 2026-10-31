@@ -1,8 +1,53 @@
-<div class="eda-table" id="ma-tabla-21"><span class="eda-table-title">Nemenyi y diferencia cr&#xed;tica</span><input aria-label="Buscar en Nemenyi y diferencia cr&#xed;tica" placeholder="Buscar en esta tabla&#x2026;"><table class="dataframe"><thead><tr><th>a</th><th>b</th><th>mean_delta_f1</th><th>sd_delta_f1</th><th>folds_a_higher</th><th>folds</th></tr></thead><tbody><tr><td>random_forest__smote__bayesian_tpe</td><td>xgboost__smote__random</td><td>0.000431</td><td>0.011252</td><td>2</td><td>5</td></tr><tr><td>random_forest__smote__bayesian_tpe</td><td>logistic__smote__grid</td><td>0.004467</td><td>0.015267</td><td>3</td><td>5</td></tr><tr><td>xgboost__smote__random</td><td>logistic__smote__grid</td><td>0.004037</td><td>0.013711</td><td>2</td><td>5</td></tr></tbody></table></div><script>(function(){const root=document.getElementById('ma-tabla-21');
-    const body=root.querySelector('tbody'),input=root.querySelector('input');
-    input.addEventListener('input',()=>{for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(input.value.toLowerCase());});
-    root.querySelectorAll('thead th').forEach((h,i)=>{let asc=true;h.tabIndex=0;h.title='Ordenar columna';
-    const sort=()=>{const rows=Array.from(body.rows);rows.sort((a,b)=>{const x=a.cells[i].textContent,y=b.cells[i].textContent;
-    const nx=Number(x.replaceAll(',','')),ny=Number(y.replaceAll(',',''));
-    const c=(x!=='\u2014'&&y!=='\u2014'&&Number.isFinite(nx)&&Number.isFinite(ny))?nx-ny:x.localeCompare(y,'es');return asc?c:-c;});
-    rows.forEach(r=>body.appendChild(r));asc=!asc;};h.addEventListener('click',sort);h.addEventListener('keydown',e=>{if(e.key==='Enter')sort();});});})();</script>
+<div class="sourceCode" id="mod-097-cb"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="mod-097-cb-1"><a href="#mod-097-cb-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> Medidor:</span>
+<span id="mod-097-cb-2"><a href="#mod-097-cb-2" aria-hidden="true" tabindex="-1"></a>    <span class="co">&quot;&quot;&quot;Mide tiempo de pared y pico de RSS (memoria del proceso, incluye c&#xf3;digo C) de un bloque.&quot;&quot;&quot;</span></span>
+<span id="mod-097-cb-3"><a href="#mod-097-cb-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="mod-097-cb-4"><a href="#mod-097-cb-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, intervalo<span class="op">=</span><span class="fl">0.002</span>):</span>
+<span id="mod-097-cb-5"><a href="#mod-097-cb-5" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.intervalo <span class="op">=</span> intervalo</span>
+<span id="mod-097-cb-6"><a href="#mod-097-cb-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="mod-097-cb-7"><a href="#mod-097-cb-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__enter__</span>(<span class="va">self</span>):</span>
+<span id="mod-097-cb-8"><a href="#mod-097-cb-8" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.proceso <span class="op">=</span> psutil.Process()</span>
+<span id="mod-097-cb-9"><a href="#mod-097-cb-9" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.base <span class="op">=</span> <span class="va">self</span>.pico <span class="op">=</span> <span class="va">self</span>.proceso.memory_info().rss</span>
+<span id="mod-097-cb-10"><a href="#mod-097-cb-10" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.activo <span class="op">=</span> <span class="va">True</span></span>
+<span id="mod-097-cb-11"><a href="#mod-097-cb-11" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.hilo <span class="op">=</span> threading.Thread(target<span class="op">=</span><span class="va">self</span>._muestrear, daemon<span class="op">=</span><span class="va">True</span>)</span>
+<span id="mod-097-cb-12"><a href="#mod-097-cb-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.hilo.start()</span>
+<span id="mod-097-cb-13"><a href="#mod-097-cb-13" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.inicio <span class="op">=</span> time.perf_counter()</span>
+<span id="mod-097-cb-14"><a href="#mod-097-cb-14" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span></span>
+<span id="mod-097-cb-15"><a href="#mod-097-cb-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="mod-097-cb-16"><a href="#mod-097-cb-16" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> _muestrear(<span class="va">self</span>):</span>
+<span id="mod-097-cb-17"><a href="#mod-097-cb-17" aria-hidden="true" tabindex="-1"></a>        <span class="cf">while</span> <span class="va">self</span>.activo:</span>
+<span id="mod-097-cb-18"><a href="#mod-097-cb-18" aria-hidden="true" tabindex="-1"></a>            <span class="va">self</span>.pico <span class="op">=</span> <span class="bu">max</span>(<span class="va">self</span>.pico, <span class="va">self</span>.proceso.memory_info().rss)</span>
+<span id="mod-097-cb-19"><a href="#mod-097-cb-19" aria-hidden="true" tabindex="-1"></a>            time.sleep(<span class="va">self</span>.intervalo)</span>
+<span id="mod-097-cb-20"><a href="#mod-097-cb-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="mod-097-cb-21"><a href="#mod-097-cb-21" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__exit__</span>(<span class="va">self</span>, <span class="op">*</span>exc):</span>
+<span id="mod-097-cb-22"><a href="#mod-097-cb-22" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.segundos <span class="op">=</span> time.perf_counter() <span class="op">-</span> <span class="va">self</span>.inicio</span>
+<span id="mod-097-cb-23"><a href="#mod-097-cb-23" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.activo <span class="op">=</span> <span class="va">False</span></span>
+<span id="mod-097-cb-24"><a href="#mod-097-cb-24" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.hilo.join()</span>
+<span id="mod-097-cb-25"><a href="#mod-097-cb-25" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.pico <span class="op">=</span> <span class="bu">max</span>(<span class="va">self</span>.pico, <span class="va">self</span>.proceso.memory_info().rss)</span>
+<span id="mod-097-cb-26"><a href="#mod-097-cb-26" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.mib <span class="op">=</span> (<span class="va">self</span>.pico <span class="op">-</span> <span class="va">self</span>.base) <span class="op">/</span> <span class="dv">2</span> <span class="op">**</span> <span class="dv">20</span></span>
+<span id="mod-097-cb-27"><a href="#mod-097-cb-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="mod-097-cb-28"><a href="#mod-097-cb-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="mod-097-cb-29"><a href="#mod-097-cb-29" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> correr(nombre, variante, fabrica, Z, yz, Ze, ye, fold, referencia<span class="op">=</span><span class="va">None</span>, repeticiones<span class="op">=</span><span class="dv">5</span>):</span>
+<span id="mod-097-cb-30"><a href="#mod-097-cb-30" aria-hidden="true" tabindex="-1"></a>    <span class="co">&quot;&quot;&quot;Entrena y predice una variante; devuelve tiempos, memoria, m&#xe9;tricas y acuerdo con la est&#xe1;ndar.</span></span>
+<span id="mod-097-cb-31"><a href="#mod-097-cb-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="mod-097-cb-32"><a href="#mod-097-cb-32" aria-hidden="true" tabindex="-1"></a><span class="co">    Los tiempos y la memoria son la mediana de ``repeticiones`` ajustes y predicciones</span></span>
+<span id="mod-097-cb-33"><a href="#mod-097-cb-33" aria-hidden="true" tabindex="-1"></a><span class="co">    independientes; la inferencia mide solo ``predict`` sobre el fold externo completo.</span></span>
+<span id="mod-097-cb-34"><a href="#mod-097-cb-34" aria-hidden="true" tabindex="-1"></a><span class="co">    &quot;&quot;&quot;</span></span>
+<span id="mod-097-cb-35"><a href="#mod-097-cb-35" aria-hidden="true" tabindex="-1"></a>    medidas <span class="op">=</span> []</span>
+<span id="mod-097-cb-36"><a href="#mod-097-cb-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> _ <span class="kw">in</span> <span class="bu">range</span>(repeticiones):</span>
+<span id="mod-097-cb-37"><a href="#mod-097-cb-37" aria-hidden="true" tabindex="-1"></a>        modelo <span class="op">=</span> fabrica()</span>
+<span id="mod-097-cb-38"><a href="#mod-097-cb-38" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> Medidor() <span class="im">as</span> entrenamiento:</span>
+<span id="mod-097-cb-39"><a href="#mod-097-cb-39" aria-hidden="true" tabindex="-1"></a>            modelo.fit(Z, yz)</span>
+<span id="mod-097-cb-40"><a href="#mod-097-cb-40" aria-hidden="true" tabindex="-1"></a>        <span class="cf">with</span> Medidor() <span class="im">as</span> inferencia:</span>
+<span id="mod-097-cb-41"><a href="#mod-097-cb-41" aria-hidden="true" tabindex="-1"></a>            etiquetas <span class="op">=</span> modelo.predict(Ze)</span>
+<span id="mod-097-cb-42"><a href="#mod-097-cb-42" aria-hidden="true" tabindex="-1"></a>        medidas.append((entrenamiento.segundos, inferencia.segundos, entrenamiento.mib, inferencia.mib))</span>
+<span id="mod-097-cb-43"><a href="#mod-097-cb-43" aria-hidden="true" tabindex="-1"></a>    medidas <span class="op">=</span> np.median(np.array(medidas), axis<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="mod-097-cb-44"><a href="#mod-097-cb-44" aria-hidden="true" tabindex="-1"></a>    score <span class="op">=</span> puntuar(modelo, Ze)</span>
+<span id="mod-097-cb-45"><a href="#mod-097-cb-45" aria-hidden="true" tabindex="-1"></a>    fila <span class="op">=</span> {<span class="st">&#39;model&#39;</span>: nombre, <span class="st">&#39;variant&#39;</span>: variante, <span class="st">&#39;outer_fold&#39;</span>: fold,</span>
+<span id="mod-097-cb-46"><a href="#mod-097-cb-46" aria-hidden="true" tabindex="-1"></a>            <span class="st">&#39;train_seconds&#39;</span>: medidas[<span class="dv">0</span>], <span class="st">&#39;predict_seconds&#39;</span>: medidas[<span class="dv">1</span>],</span>
+<span id="mod-097-cb-47"><a href="#mod-097-cb-47" aria-hidden="true" tabindex="-1"></a>            <span class="st">&#39;train_rss_mib&#39;</span>: medidas[<span class="dv">2</span>], <span class="st">&#39;predict_rss_mib&#39;</span>: medidas[<span class="dv">3</span>], <span class="st">&#39;repetitions&#39;</span>: repeticiones,</span>
+<span id="mod-097-cb-48"><a href="#mod-097-cb-48" aria-hidden="true" tabindex="-1"></a>            <span class="st">&#39;f1&#39;</span>: f1_score(ye, etiquetas), <span class="st">&#39;auc&#39;</span>: roc_auc_score(ye, score),</span>
+<span id="mod-097-cb-49"><a href="#mod-097-cb-49" aria-hidden="true" tabindex="-1"></a>            <span class="st">&#39;agreement_with_standard&#39;</span>: <span class="bu">float</span>(np.mean(etiquetas <span class="op">==</span> referencia)) <span class="cf">if</span> referencia <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span> <span class="cf">else</span> <span class="fl">1.0</span>}</span>
+<span id="mod-097-cb-50"><a href="#mod-097-cb-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="bu">hasattr</span>(modelo, <span class="st">&#39;best_iteration&#39;</span>):</span>
+<span id="mod-097-cb-51"><a href="#mod-097-cb-51" aria-hidden="true" tabindex="-1"></a>        fila[<span class="st">&#39;trees_used&#39;</span>] <span class="op">=</span> <span class="bu">int</span>(modelo.best_iteration) <span class="op">+</span> <span class="dv">1</span></span>
+<span id="mod-097-cb-52"><a href="#mod-097-cb-52" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> fila, etiquetas</span></code></pre></div>
