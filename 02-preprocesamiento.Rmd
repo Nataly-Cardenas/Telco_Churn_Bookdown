@@ -76,7 +76,7 @@ print(prop.table(table(Churn = y_train)))
 
 ### 4.2 Manejo de `TotalCharges` {-}
 
-`TotalCharges` es el cargo acumulado que el cliente ha pagado hasta el momento del corte y, por definición, depende del tiempo que lleva en la compañía (`tenure`, en meses). En 11 clientes del dataset (8 en `train` y 3 en `test`), este campo venía como un espacio en blanco que, al convertirlo a numérico, pasó a ser nulo. Todos esos casos tienen `tenure = 0`, es decir, son clientes recién dados de alta que aún no han completado su primer mes y, por tanto, todavía no tienen ningún cobro acumulado; la relación se cumple también al revés, pues los 11 vacíos coinciden exactamente con los 11 clientes de antigüedad cero. Además, estos clientes sí tienen un `MonthlyCharges` válido (entre 19.70 y 80.85): ya tienen un plan y un precio mensual, solo que aún no se les ha facturado. Como el valor real de su cargo acumulado es 0, los vacíos se reemplazan por 0 en lugar de estimarlos con la media o la mediana, que les asignarían un cobro que nunca han pagado. Dos aserciones verifican esta condición en `train` y en `test`, y una comparación por validación cruzada mostró que la elección no altera el desempeño (AUC-ROC de 0.8460 con 0 frente a 0.8460 con mediana más indicador).
+`TotalCharges` es el cargo acumulado que el cliente ha pagado hasta el momento del corte y, por definición, depende del tiempo que lleva en la compañía (`tenure`, en meses). En 11 clientes del dataset (8 en `train` y 3 en `test`), este campo venía como un espacio en blanco que, al convertirlo a numérico, pasó a ser nulo. Todos esos casos tienen `tenure = 0`, es decir, son clientes recién dados de alta que aún no han completado su primer mes y, por tanto, todavía no tienen ningún cobro acumulado; la relación se cumple también al revés, pues los 11 vacíos coinciden exactamente con los 11 clientes de antigüedad cero. Además, estos clientes sí tienen un `MonthlyCharges` válido (entre 19.70 y 80.85): ya tienen un plan y un precio mensual, solo que aún no se les ha facturado. Como el valor real de su cargo acumulado es 0, los vacíos se reemplazan por 0 en lugar de estimarlos con la media o la mediana, que les asignarían un cobro que nunca han pagado. Dos aserciones verifican esta condición en `train` y en `test`, y una comparación por validación cruzada mostró que la elección no altera el desempeño (AUC-ROC de 0.8419 tanto con 0 como con mediana más indicador).
 
 ```{r pre-012}
 # Convertir a numérico, forzando errores (espacios en blanco) a NA
@@ -138,7 +138,7 @@ peso_balanceado <- function(y) { w <- length(y) / (2 * table(y)); hardhat::impor
 # L2 con C = 1, como LogisticRegression: en glmnet equivale a lambda = 1 / (C · n), sin estandarizar,
 # con n = filas de entrenamiento de cada fold (4/5 de train en una CV de 5 folds).
 modelo_logistico <- logistic_reg(penalty = 1 / round(0.8 * nrow(X_train)), mixture = 0) |>
-  set_engine("glmnet", standardize = FALSE)
+  set_engine("glmnet", standardize = FALSE, thresh = 1e-12, maxit = 100000)
 
 pipeline_base <- function(datos, imputar = FALSE) {
   receta <- recipe(Churn ~ ., data = datos)   # la columna peso (importance_weights) se reconoce como pesos de caso
@@ -167,7 +167,7 @@ cat(sprintf("CV AUC-ROC · mediana + indicador (alternativa, sin AvgChargePerMon
 cat(sprintf("Diferencia pareada por fold (alternativa − 0): %+.4f ± %.4f\n", mean(dif), sd_pob(dif)))
 ```
 
-Conclusión medible: con solo 8 registros afectados en train (0.14%), el AUC-ROC por CV es prácticamente idéntico entre imputar con 0 (0.8459 ± 0.0124) y usar mediana + indicador (0.8460 ± 0.0125); la diferencia pareada por fold (+0.0001 ± 0.0001) queda muy por debajo de la desviación estándar entre folds. La elección no es crítica para el desempeño. Se mantiene la imputación con 0 porque además es más interpretable en este caso (0 cargos acumulados para un cliente sin antigüedad, en vez de un valor "promedio" que nunca observó), y porque la verificación de la celda anterior confirma que la condición que la justifica (`tenure = 0`) se cumple siempre, en train y en test.
+Conclusión medible: con solo 8 registros afectados en train (0.14%), el AUC-ROC por CV es prácticamente idéntico entre imputar con 0 (0.8419 ± 0.0152) y usar mediana + indicador (0.8419 ± 0.0152); la diferencia pareada por fold (+0.0000 ± 0.0000) queda muy por debajo de la desviación estándar entre folds. La elección no es crítica para el desempeño. Se mantiene la imputación con 0 porque además es más interpretable en este caso (0 cargos acumulados para un cliente sin antigüedad, en vez de un valor "promedio" que nunca observó), y porque la verificación de la celda anterior confirma que la condición que la justifica (`tenure = 0`) se cumple siempre, en train y en test.
 
 Esto responde a la duda del EDA con evidencia y no con una afirmación: el impacto medido por CV es despreciable con este dataset. No se generaliza a otros datos donde la ausencia tenga otra causa.
 
@@ -227,7 +227,7 @@ X_train |>
   pivot_wider(names_from = variable, values_from = value)
 ```
 
-Nota sobre la redundancia de `AvgChargePerMonth`. Su correlación con `MonthlyCharges` en train es de 0.9963: para la enorme mayoría de los clientes, `AvgChargePerMonth ≈ MonthlyCharges`, justamente porque `TotalCharges ≈ tenure × MonthlyCharges` cuando no hay cambios de plan. Es coherente con su coeficiente en la Regresión Logística (más adelante, sección 7.5): −0.033, puesto 20 de 24 por magnitud, del mismo orden que el de `gender`. Se conserva de todos modos porque su costo es mínimo, y su utilidad se contrasta con la ablación de la sección 4.7 en lugar de suponerla.
+Nota sobre la redundancia de `AvgChargePerMonth`. Su correlación con `MonthlyCharges` en train es de 0.9963: para la enorme mayoría de los clientes, `AvgChargePerMonth ≈ MonthlyCharges`, justamente porque `TotalCharges ≈ tenure × MonthlyCharges` cuando no hay cambios de plan. Es coherente con su coeficiente en la Regresión Logística (más adelante, sección 7.5): 0.043, puesto 20 de 24 por magnitud, del mismo orden que el de `gender`. Se conserva de todos modos porque su costo es mínimo, y su utilidad se contrasta con la ablación de la sección 4.7 en lugar de suponerla.
 
 c) `gender` y `PhoneService`: se conservan. El EDA encontró que no tienen asociación bivariada significativa con Churn (tras corrección de Holm). Aun así, se mantienen en el pipeline, pero por una razón más simple y defendible que "el modelo puede captar interacciones ocultas":
 
@@ -306,7 +306,7 @@ cat(sprintf("CV AUC-ROC DummyClassifier (clase mayoritaria): %.4f ± %.4f\n", me
 cat(sprintf("CV AUC-ROC DummyClassifier (estratificado):     %.4f ± %.4f\n", mean(auc_dummy_est), sd_pob(auc_dummy_est)))
 ```
 
-Lectura de la validación cruzada. El AUC-ROC por CV en train es 0.8454 ± 0.0123. El control con etiquetas permutadas cae a 0.4873 (indistinguible de azar), como se espera si el pipeline no filtra información de la etiqueta real. Ambas versiones de `DummyClassifier` quedan en ~0.50, muy por debajo del modelo real, lo que confirma que el desempeño no es un artefacto del desbalance de clases. La comparación de este valor con el resultado en `test` se hace en la sección 7.4, después de la evaluación única.
+Lectura de la validación cruzada. El AUC-ROC por CV en train es 0.8414 ± 0.0159. El control con etiquetas permutadas cae a 0.4867 (indistinguible de azar), como se espera si el pipeline no filtra información de la etiqueta real. Ambas versiones de `DummyClassifier` quedan en ~0.50, muy por debajo del modelo real, lo que confirma que el desempeño no es un artefacto del desbalance de clases. La comparación de este valor con el resultado en `test` se hace en la sección 7.4, después de la evaluación única.
 
 ### 4.7 Ablación por CV: ¿aportan `gender`, `PhoneService` y `AvgChargePerMonth`? {-}
 
@@ -351,7 +351,7 @@ cat("Ablación por validación cruzada (5 folds, solo train). Δ = media ± sd d
 print(as.data.frame(filas), row.names = FALSE)
 ```
 
-Lectura de la ablación. Quitar `gender`, `PhoneService` o ambas no empeora el desempeño: el cambio en AUC-ROC al retirarlas es +0.0002 ± 0.0004, +0.0002 ± 0.0004 y +0.0005 ± 0.0005 (del orden de la variación entre folds) y el de PR-AUC es prácticamente cero; en este modelo no aportan de forma medible, lo que respalda el hallazgo del EDA para `gender` y es coherente con que el coeficiente relativamente alto de `PhoneService` reflejara su colinealidad con `MultipleLines` más que un aporte propio. Quitar `PhoneService` y `MultipleLines` juntas casi no cambia el AUC-ROC (-0.0006 ± 0.0018) pero baja el PR-AUC (-0.0105 ± 0.0074): la información sobre líneas telefónicas aporta algo pequeño cuando se toma en conjunto, y ese aporte no se ve retirando solo `PhoneService`. Quitar `AvgChargePerMonth` tampoco empeora nada (AUC-ROC +0.0006 ± 0.0004, PR-AUC +0.0021 ± 0.0016): con una correlación de 0.9963 con `MonthlyCharges`, no hay evidencia de que aporte en este modelo lineal y eliminarla sería defendible. Se conserva únicamente para no cambiar el pipeline ya reportado; su utilidad debería reevaluarse con modelos de árboles antes de decidir.
+Lectura de la ablación. Quitar `gender` no empeora el desempeño: el cambio en AUC-ROC es +0.0003 ± 0.0004 y en PR-AUC +0.0009 ± 0.0007 (del orden de la variación entre folds), lo que respalda el hallazgo del EDA: en este modelo no aporta de forma medible. `PhoneService` sí aporta algo, aunque poco: retirarla baja el AUC-ROC en −0.0014 ± 0.0006 y el PR-AUC en −0.0025 ± 0.0008; la caída es pequeña, pero consistente entre folds (la desviación es menor que la media). Quitar `PhoneService` y `MultipleLines` juntas reduce algo más el PR-AUC (−0.0049 ± 0.0022) con un AUC-ROC similar (−0.0015 ± 0.0009): la información sobre líneas telefónicas aporta un poco, sobre todo en la detección de la clase positiva. Quitar `gender` y `PhoneService` a la vez (AUC-ROC −0.0011 ± 0.0005) repite el efecto de `PhoneService` sola. Quitar `AvgChargePerMonth` no empeora nada (AUC-ROC +0.0005 ± 0.0002, PR-AUC +0.0008 ± 0.0021): con una correlación de 0.9963 con `MonthlyCharges`, no hay evidencia de que aporte en este modelo lineal y eliminarla sería defendible. Se conserva únicamente para no cambiar el pipeline ya reportado; su utilidad debería reevaluarse con modelos de árboles antes de decidir. En todos los casos las diferencias son del orden de milésimas, muy por debajo de la variación entre folds del AUC-ROC (± 0.016).
 
 La ablación es una comprobación de utilidad predictiva dentro de este dataset y este modelo lineal; no prueba que las variables sean causalmente irrelevantes ni descarta interacciones que un modelo de árboles sí podría aprovechar. Las variables se mantienen en el pipeline: la decisión de conservarlas se tomó antes de ver estos resultados y no se cambia para mejorar una métrica.
 
@@ -405,11 +405,11 @@ library(ggplot2)
 pesos <- as.numeric(length(y_train) / (2 * table(y_train)))[y_train + 1]   # class_weight = 'balanced'
 log_reg <- glmnet(as.matrix(X_train_processed), y_train, family = "binomial", alpha = 0,
                   lambda = 1 / nrow(X_train_processed), weights = pesos,   # L2 con C = 1
-                  standardize = FALSE, maxit = 1000)
+                  standardize = FALSE, thresh = 1e-12, maxit = 100000)   # tolerancia estricta: llega al óptimo
 
 # Verificación de convergencia: si el ajuste agota maxit, el resultado no es confiable.
-cat(sprintf("Iteraciones hasta converger: %d (máximo permitido: %d)\n", log_reg$npasses, 1000L))
-stopifnot("El modelo no convergió: subir maxit" = log_reg$npasses < 1000)
+cat(sprintf("Iteraciones hasta converger: %d (máximo permitido: %d)\n", log_reg$npasses, 100000L))
+stopifnot("El modelo no convergió: subir maxit" = log_reg$npasses < 100000)
 
 y_proba <- as.numeric(predict(log_reg, as.matrix(X_test_processed), type = "response"))
 y_pred <- as.integer(y_proba >= 0.5)
@@ -500,11 +500,11 @@ ggplot(curva, aes(1 - specificity, sensitivity)) +
 
 ### 7.4 Interpretación del resultado {-}
 
-- El Accuracy (score por defecto de sklearn) da una primera idea del desempeño general, pero al haber desbalance de clases (~27% Churn) puede sobreestimar la calidad del modelo. El Accuracy de 0.7388 debe leerse contra la referencia de predecir siempre la clase mayoritaria en este test (0.7346, no 0.50): la mejora sobre "no hacer nada" es modesta en Accuracy y se concentra en el Recall (0.7861 frente a 0 de la referencia).
-- El Recall de la clase Churn es especialmente importante en este problema de negocio: interesa detectar la mayor cantidad posible de clientes que realmente van a abandonar, aunque eso implique sacrificar Precisión (aquí 0.5052 a umbral 0.5).
-- El AUC-ROC resume la capacidad de separar ambas clases independientemente del umbral. No garantiza buena precisión ni utilidad operativa, por lo que se complementa con el PR-AUC (0.6339, frente a una prevalencia de churn de ~0.27), que no se infla por los verdaderos negativos.
-- El intervalo de confianza del AUC-ROC en test (IC 95% [0.8214, 0.8630], bootstrap) indica cuánto podría variar la estimación con otra muestra de test del mismo tamaño.
-- Coherencia con la validación cruzada: el AUC-ROC en test (0.8419) es consistente con el de CV en train (0.8453 ± 0.0123): no hay señal de sobreajuste ni de que el resultado dependa de esta partición. Es una comprobación de coherencia, no una prueba de ausencia de leakage; esa se apoya en el orden del pipeline, los controles de la sección 4.6 y la trazabilidad del split.
+- El Accuracy (score por defecto de sklearn) da una primera idea del desempeño general, pero al haber desbalance de clases (~27% Churn) puede sobreestimar la calidad del modelo. El Accuracy de 0.7381 debe leerse contra la referencia de predecir siempre la clase mayoritaria en este test (0.7346, no 0.50): la mejora sobre "no hacer nada" es modesta en Accuracy y se concentra en el Recall (0.7834 frente a 0 de la referencia).
+- El Recall de la clase Churn es especialmente importante en este problema de negocio: interesa detectar la mayor cantidad posible de clientes que realmente van a abandonar, aunque eso implique sacrificar Precisión (aquí 0.5043 a umbral 0.5).
+- El AUC-ROC resume la capacidad de separar ambas clases independientemente del umbral. No garantiza buena precisión ni utilidad operativa, por lo que se complementa con el PR-AUC (0.6342, frente a una prevalencia de churn de ~0.27), que no se infla por los verdaderos negativos.
+- El intervalo de confianza del AUC-ROC en test (IC 95% [0.8212, 0.8626], bootstrap) indica cuánto podría variar la estimación con otra muestra de test del mismo tamaño.
+- Coherencia con la validación cruzada: el AUC-ROC en test (0.8418) es consistente con el de CV en train (0.8414 ± 0.0159): no hay señal de sobreajuste ni de que el resultado dependa de esta partición. Es una comprobación de coherencia, no una prueba de ausencia de leakage; esa se apoya en el orden del pipeline, los controles de la sección 4.6 y la trazabilidad del split.
 - `class_weight='balanced'` cambia el objetivo de entrenamiento: favorece el recall y no produce probabilidades calibradas para la prevalencia original. Si las probabilidades se usaran como riesgo habría que calibrarlas (dentro de train, por CV), y el umbral 0.5 es solo el de referencia, no uno justificado por costos de retención.
 - Este resultado sirve como línea base: los modelos posteriores (Random Forest, Gradient Boosting, etc.) se comparan contra ella por CV en train, no por su score en test.
 
@@ -531,24 +531,24 @@ cat("\nCoeficientes específicos de gender y PhoneService (con su puesto):\n")
 print(as.data.frame(filter(ranking, str_detect(variable, "gender|PhoneService"))), row.names = FALSE)
 ```
 
-> Corrección respecto a la lectura inicial. Para `gender` (coeficiente 0.029, puesto 21 de 24) la conclusión del EDA se sostiene: aporta muy poco a este modelo. Para `PhoneService` no se sostiene igual de bien: su coeficiente (−0.3165) lo ubica en el puesto 12 de 24, por encima —en magnitud— de `Dependents` (−0.232), `SeniorCitizen` (0.154), `Partner` (0.019) y otras variables que sí se consideran informativas. No es de los coeficientes más grandes, pero tampoco es de los más pequeños.
+> Corrección respecto a la lectura inicial. Para `gender` (coeficiente 0.032, puesto 21 de 24) la conclusión del EDA se sostiene: aporta muy poco a este modelo. Para `PhoneService` no se sostiene igual de bien: su coeficiente (−0.281) lo ubica en el puesto 15 de 24, por encima —en magnitud— de `Dependents` (−0.229), `SeniorCitizen` (0.154), `Partner` (0.018) y otras variables que sí se consideran informativas. No es de los coeficientes más grandes, pero tampoco es de los más pequeños.
 >
-> Una parte de esa magnitud es probablemente un artefacto de colinealidad, no de aporte real: `PhoneService_Yes` (−0.317) y `MultipleLines_Yes` (+0.287) tienen coeficientes de signo opuesto y magnitud similar, consistente con que ambas codifican información muy relacionada (sin `PhoneService` no puede haber `MultipleLines`). Con regularización L2 y variables correlacionadas, el modelo puede repartir peso entre ellas de forma inestable. El propio notebook ya advierte esto en la sección 4.3.c, pero la lectura inicial no lo aplicó de forma consistente a `PhoneService`.
+> Una parte de esa magnitud es probablemente un artefacto de colinealidad, no de aporte real: `PhoneService_Yes` (−0.281) y `MultipleLines_Yes` (+0.297) tienen coeficientes de signo opuesto y magnitud similar, consistente con que ambas codifican información muy relacionada (sin `PhoneService` no puede haber `MultipleLines`). Con regularización L2 y variables correlacionadas, el modelo puede repartir peso entre ellas de forma inestable. El propio notebook ya advierte esto en la sección 4.3.c, pero la lectura inicial no lo aplicó de forma consistente a `PhoneService`.
 >
-> Conclusión: leer solo el coeficiente individual no permite afirmar que `PhoneService` aporta poco ni que aporta mucho. Por eso se recurrió a la ablación por validación cruzada de la sección 4.7: retirar `PhoneService` por sí sola no cambia el AUC-ROC de forma medible (+0.0002 ± 0.0003), pero retirarla junto con `MultipleLines` sí reduce algo el PR-AUC (−0.0106 ± 0.0071). Es decir, el aporte, pequeño, es del par y no de `PhoneService` por separado, y su coeficiente de −0.3165 refleja sobre todo la información compartida con `MultipleLines`.
+> Conclusión: leer solo el coeficiente individual no permite afirmar que `PhoneService` aporta poco ni que aporta mucho. Por eso se recurrió a la ablación por validación cruzada de la sección 4.7: retirar `PhoneService` reduce ligeramente el AUC-ROC (−0.0014 ± 0.0006) y el PR-AUC (−0.0025 ± 0.0008), y retirarla junto con `MultipleLines` reduce algo más el PR-AUC (−0.0049 ± 0.0022). Es decir, `PhoneService` tiene un aporte pequeño pero medible, que se suma al de `MultipleLines`; su coeficiente de −0.281 refleja en parte la información compartida con esa variable.
 
 ## 8. Resumen y próximos pasos {-}
 
 Qué se hizo
 - El target se transformó a binario (0/1).
-- Los 11 valores vacíos de `TotalCharges` (8 en train y 3 en test) corresponden a clientes con `tenure = 0`, es decir, aún sin cargo acumulado, y se reemplazaron por 0. La comparación por CV contra mediana más indicador mostró que la elección no cambia el desempeño (AUC-ROC 0.8459 ± 0.0124 frente a 0.8460 ± 0.0125).
+- Los 11 valores vacíos de `TotalCharges` (8 en train y 3 en test) corresponden a clientes con `tenure = 0`, es decir, aún sin cargo acumulado, y se reemplazaron por 0. La comparación por CV contra mediana más indicador mostró que la elección no cambia el desempeño (AUC-ROC 0.8419 ± 0.0152 en ambos casos).
 - Se colapsaron las categorías redundantes («No internet service» y «No phone service»), cuya información sigue en `InternetService` y `PhoneService`.
-- Se creó `AvgChargePerMonth` (usando `MonthlyCharges` cuando `tenure = 0`). Su correlación de 0.9963 con `MonthlyCharges` explica su coeficiente pequeño (−0.047, puesto 20 de 24).
+- Se creó `AvgChargePerMonth` (usando `MonthlyCharges` cuando `tenure = 0`). Su correlación de 0.9963 con `MonthlyCharges` explica su coeficiente pequeño (0.043, puesto 20 de 24).
 - `SeniorCitizen` se trató como categórica, igual que el resto de variables binarias.
-- Se conservaron `gender` y `PhoneService`. La ablación por CV (sección 4.7) no encontró aporte medible de cada una por separado (ΔAUC-ROC +0.0001 y +0.0002); solo el par `PhoneService`/`MultipleLines` aporta algo pequeño (ΔPR-AUC −0.0106 ± 0.0071). Eliminar `AvgChargePerMonth` queda como decisión abierta.
+- Se conservaron `gender` y `PhoneService`. La ablación por CV (sección 4.7) no encontró aporte medible de `gender` (ΔAUC-ROC +0.0003); `PhoneService` aporta poco pero de forma consistente (ΔAUC-ROC −0.0014 ± 0.0006), y el par `PhoneService`/`MultipleLines` algo más en PR-AUC (−0.0049 ± 0.0022). Eliminar `AvgChargePerMonth` queda como decisión abierta.
 
 Qué se validó
-- La CV en train (AUC-ROC 0.8454 ± 0.0123) es coherente con el test (0.8419; IC 95 % [0.8214, 0.8631]). Los controles no muestran fuga de información: con etiquetas permutadas el AUC-ROC baja a 0.4868 y el `DummyClassifier` da 0.50.
+- La CV en train (AUC-ROC 0.8414 ± 0.0159) es coherente con el test (0.8418; IC 95 % [0.8212, 0.8626]). Los controles no muestran fuga de información: con etiquetas permutadas el AUC-ROC baja a 0.4867 y el `DummyClassifier` da 0.50.
 - Solo 13 filas de test (0.92 %) tienen un perfil idéntico en train, un nivel esperable en un dataset mayormente categórico. La partición es la misma del EDA y se verifica con `train_index.csv` y `test_index.csv`.
 - Limitación de alcance: el score mide clasificación dentro de un corte, no necesariamente predicción de churn futuro.
 
