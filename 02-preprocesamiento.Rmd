@@ -51,10 +51,6 @@ y_train <- particion$y_train; y_test <- particion$y_test
 cat(sprintf("Train: %d Clientes, Test: %d Clientes\n", nrow(X_train), nrow(X_test)))
 ```
 
-```{r pre-006-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-006")
-```
-
 ## 4. Pasos de preprocesamiento definidos a partir del EDA {-}
 
 1. Manejo del target: convertir `Churn` de 'Yes'/'No' a 1/0.
@@ -76,10 +72,6 @@ y_train <- if_else(y_train == "Yes", 1L, 0L)
 y_test <- if_else(y_test == "Yes", 1L, 0L)
 
 print(prop.table(table(Churn = y_train)))
-```
-
-```{r pre-009-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-009")
 ```
 
 ### 4.2 Manejo de `TotalCharges` {-}
@@ -112,10 +104,6 @@ cat("Nulos en TotalCharges (train) después de imputar:", sum(is.na(X_train$Tota
 cat("Nulos en TotalCharges (test) después de imputar:", sum(is.na(X_test$TotalCharges)), "\n")
 ```
 
-```{r pre-012-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-012")
-```
-
 ```{r pre-013}
 DATA_PATH <- "WA_Fn-UseC_-Telco-Customer-Churn.csv"
 df <- read_csv(DATA_PATH, col_types = cols(.default = col_character()), trim_ws = FALSE, na = character())
@@ -143,15 +131,17 @@ X_train_alt$TotalCharges <- suppressWarnings(as.numeric(df$TotalCharges[X_train$
 numeric_features_base <- c("tenure", "MonthlyCharges", "TotalCharges")
 categorical_features_base <- setdiff(names(X_train), c(numeric_features_base, ".indice"))
 
-datos_cv <- function(X, y) bind_cols(select(X, -.indice), Churn = factor(y, levels = c(1, 0)))
-peso_balanceado <- function(y) { w <- length(y) / (2 * table(y)); hardhat::importance_weights(w[as.character(y)]) }
+datos_cv <- function(X, y) bind_cols(select(X, -.indice), Churn = factor(y, levels = c(1, 0))) |>
+  mutate(SeniorCitizen = as.character(SeniorCitizen))   # categórica 0/1, igual que en el OneHotEncoder
+peso_balanceado <- function(y) { w <- length(y) / (2 * table(y)); hardhat::importance_weights(as.numeric(w[as.character(y)])) }
 
-modelo_logistico <- logistic_reg(penalty = 1, mixture = 0) |>   # L2 con C = 1, como LogisticRegression
-  set_engine("glmnet")
+# L2 con C = 1, como LogisticRegression: en glmnet equivale a lambda = 1 / (C · n), sin estandarizar,
+# con n = filas de entrenamiento de cada fold (4/5 de train en una CV de 5 folds).
+modelo_logistico <- logistic_reg(penalty = 1 / round(0.8 * nrow(X_train)), mixture = 0) |>
+  set_engine("glmnet", standardize = FALSE)
 
 pipeline_base <- function(datos, imputar = FALSE) {
-  receta <- recipe(Churn ~ ., data = datos) |>
-    update_role(peso, new_role = "case_weights")
+  receta <- recipe(Churn ~ ., data = datos)   # la columna peso (importance_weights) se reconoce como pesos de caso
   if (imputar) receta <- receta |> step_indicate_na(TotalCharges) |> step_impute_median(TotalCharges)
   receta <- receta |>
     step_normalize(all_of(numeric_features_base)) |>
@@ -177,10 +167,6 @@ cat(sprintf("CV AUC-ROC · mediana + indicador (alternativa, sin AvgChargePerMon
 cat(sprintf("Diferencia pareada por fold (alternativa − 0): %+.4f ± %.4f\n", mean(dif), sd_pob(dif)))
 ```
 
-```{r pre-015-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-015")
-```
-
 Conclusión medible: con solo 8 registros afectados en train (0.14%), el AUC-ROC por CV es prácticamente idéntico entre imputar con 0 (0.8459 ± 0.0124) y usar mediana + indicador (0.8460 ± 0.0125); la diferencia pareada por fold (+0.0001 ± 0.0001) queda muy por debajo de la desviación estándar entre folds. La elección no es crítica para el desempeño. Se mantiene la imputación con 0 porque además es más interpretable en este caso (0 cargos acumulados para un cliente sin antigüedad, en vez de un valor "promedio" que nunca observó), y porque la verificación de la celda anterior confirma que la condición que la justifica (`tenure = 0`) se cumple siempre, en train y en test.
 
 Esto responde a la duda del EDA con evidencia y no con una afirmación: el impacto medido por CV es despreciable con este dataset. No se generaliza a otros datos donde la ausencia tenga otra causa.
@@ -204,10 +190,6 @@ X_test$MultipleLines <- replace(X_test$MultipleLines, X_test$MultipleLines == "N
 
 cat("Categorías únicas (ejemplo, OnlineSecurity):", unique(X_train$OnlineSecurity), "\n")   # Ejemplo de pasar de "No internet service" a "No"
 cat("Categorías únicas (MultipleLines):", unique(X_train$MultipleLines), "\n")              # Ejemplo de pasar de "No phone service" a "No"
-```
-
-```{r pre-018-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-018")
 ```
 
 b) `tenure` vs `TotalCharges` (r = 0.83): variable derivada, no eliminación. El EDA dejó esta correlación como un punto a resolver. La decisión más sólida es no borrar ninguna de las dos originales:
@@ -245,10 +227,6 @@ X_train |>
   pivot_wider(names_from = variable, values_from = value)
 ```
 
-```{r pre-020-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-020")
-```
-
 Nota sobre la redundancia de `AvgChargePerMonth`. Su correlación con `MonthlyCharges` en train es de 0.9963: para la enorme mayoría de los clientes, `AvgChargePerMonth ≈ MonthlyCharges`, justamente porque `TotalCharges ≈ tenure × MonthlyCharges` cuando no hay cambios de plan. Es coherente con su coeficiente en la Regresión Logística (más adelante, sección 7.5): −0.033, puesto 20 de 24 por magnitud, del mismo orden que el de `gender`. Se conserva de todos modos porque su costo es mínimo, y su utilidad se contrasta con la ablación de la sección 4.7 en lugar de suponerla.
 
 c) `gender` y `PhoneService`: se conservan. El EDA encontró que no tienen asociación bivariada significativa con Churn (tras corrección de Holm). Aun así, se mantienen en el pipeline, pero por una razón más simple y defendible que "el modelo puede captar interacciones ocultas":
@@ -269,14 +247,11 @@ cat(sprintf("Numéricas (%d): %s\n", length(numeric_features), paste(numeric_fea
 cat(sprintf("Categóricas (%d): %s\n", length(categorical_features), paste(categorical_features, collapse = ", ")))
 ```
 
-```{r pre-024-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-024")
-```
-
 ### 4.5 Construcción del ColumnTransformer {-}
 
 ```{r pre-026}
 preprocessor <- recipe(~ ., data = select(X_train, all_of(c(numeric_features, categorical_features)))) |>
+  step_mutate(SeniorCitizen = factor(SeniorCitizen)) |>   # categórica 0/1
   step_normalize(all_of(numeric_features)) |>
   step_dummy(all_of(categorical_features), one_hot = FALSE)   # equivalente a OneHotEncoder(drop = 'first')
 ```
@@ -292,7 +267,6 @@ Se añaden dos controles de sanidad:
 ```{r pre-028}
 datos_train <- datos_cv(X_train, y_train) |> mutate(peso = peso_balanceado(y_train))
 receta_cv <- recipe(Churn ~ ., data = datos_train) |>
-  update_role(peso, new_role = "case_weights") |>
   step_normalize(all_of(numeric_features)) |>
   step_dummy(all_of(categorical_features), one_hot = FALSE)
 pipe_cv <- workflow() |> add_recipe(receta_cv) |> add_model(modelo_logistico) |> add_case_weights(peso)
@@ -332,10 +306,6 @@ cat(sprintf("CV AUC-ROC DummyClassifier (clase mayoritaria): %.4f ± %.4f\n", me
 cat(sprintf("CV AUC-ROC DummyClassifier (estratificado):     %.4f ± %.4f\n", mean(auc_dummy_est), sd_pob(auc_dummy_est)))
 ```
 
-```{r pre-028-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-028")
-```
-
 Lectura de la validación cruzada. El AUC-ROC por CV en train es 0.8454 ± 0.0123. El control con etiquetas permutadas cae a 0.4873 (indistinguible de azar), como se espera si el pipeline no filtra información de la etiqueta real. Ambas versiones de `DummyClassifier` quedan en ~0.50, muy por debajo del modelo real, lo que confirma que el desempeño no es un artefacto del desbalance de clases. La comparación de este valor con el resultado en `test` se hace en la sección 7.4, después de la evaluación única.
 
 ### 4.7 Ablación por CV: ¿aportan `gender`, `PhoneService` y `AvgChargePerMonth`? {-}
@@ -350,7 +320,6 @@ cv_scores <- function(excluir) {
   cat_ <- setdiff(categorical_features, excluir)
   datos <- select(datos_train, -any_of(excluir))
   receta <- recipe(Churn ~ ., data = datos) |>
-    update_role(peso, new_role = "case_weights") |>
     step_normalize(all_of(num)) |>
     step_dummy(all_of(cat_), one_hot = FALSE)
   flujo <- workflow() |> add_recipe(receta) |> add_model(modelo_logistico) |> add_case_weights(peso)
@@ -382,10 +351,6 @@ cat("Ablación por validación cruzada (5 folds, solo train). Δ = media ± sd d
 print(as.data.frame(filas), row.names = FALSE)
 ```
 
-```{r pre-031-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-031")
-```
-
 Lectura de la ablación. Quitar `gender`, `PhoneService` o ambas no empeora el desempeño: el cambio en AUC-ROC al retirarlas es +0.0002 ± 0.0004, +0.0002 ± 0.0004 y +0.0005 ± 0.0005 (del orden de la variación entre folds) y el de PR-AUC es prácticamente cero; en este modelo no aportan de forma medible, lo que respalda el hallazgo del EDA para `gender` y es coherente con que el coeficiente relativamente alto de `PhoneService` reflejara su colinealidad con `MultipleLines` más que un aporte propio. Quitar `PhoneService` y `MultipleLines` juntas casi no cambia el AUC-ROC (-0.0006 ± 0.0018) pero baja el PR-AUC (-0.0105 ± 0.0074): la información sobre líneas telefónicas aporta algo pequeño cuando se toma en conjunto, y ese aporte no se ve retirando solo `PhoneService`. Quitar `AvgChargePerMonth` tampoco empeora nada (AUC-ROC +0.0006 ± 0.0004, PR-AUC +0.0021 ± 0.0016): con una correlación de 0.9963 con `MonthlyCharges`, no hay evidencia de que aporte en este modelo lineal y eliminarla sería defendible. Se conserva únicamente para no cambiar el pipeline ya reportado; su utilidad debería reevaluarse con modelos de árboles antes de decidir.
 
 La ablación es una comprobación de utilidad predictiva dentro de este dataset y este modelo lineal; no prueba que las variables sean causalmente irrelevantes ni descarta interacciones que un modelo de árboles sí podría aprovechar. Las variables se mantienen en el pipeline: la decisión de conservarlas se tomó antes de ver estos resultados y no se cambia para mejorar una métrica.
@@ -406,10 +371,6 @@ cat(sprintf("Dimensiones de X_train_processed: (%d, %d)\n", nrow(X_train_process
 cat(sprintf("Dimensiones de X_test_processed: (%d, %d)\n", nrow(X_test_processed), ncol(X_test_processed)))
 ```
 
-```{r pre-034-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-034")
-```
-
 ### 5.1 Recuperar nombres de columnas resultantes {-}
 
 ```{r pre-036}
@@ -418,10 +379,6 @@ X_train_processed_df <- X_train_processed
 X_test_processed_df <- X_test_processed
 
 head(X_train_processed_df, 5)
-```
-
-```{r pre-036-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-036")
 ```
 
 ## 6. Guardar los conjuntos procesados {-}
@@ -433,10 +390,6 @@ write_csv(tibble(Churn = y_train), "y_train.csv")
 write_csv(tibble(Churn = y_test), "y_test.csv")
 
 cat("Archivos guardados: X_train_processed.csv, X_test_processed.csv, y_train.csv, y_test.csv\n")
-```
-
-```{r pre-038-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-038")
 ```
 
 ## 7. Evaluación final en test (una sola vez) {-}
@@ -460,10 +413,6 @@ stopifnot("El modelo no convergió: subir maxit" = log_reg$npasses < 1000)
 
 y_proba <- as.numeric(predict(log_reg, as.matrix(X_test_processed), type = "response"))
 y_pred <- as.integer(y_proba >= 0.5)
-```
-
-```{r pre-040-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-040")
 ```
 
 ### 7.1 Score general (Accuracy) y métricas clave {-}
@@ -504,10 +453,6 @@ ic <- quantile(boot_aucs, c(0.025, 0.975))
 cat(sprintf("\nAUC-ROC en test, IC 95%% (bootstrap, 1000 remuestreos): [%.4f, %.4f]\n", ic[1], ic[2]))
 ```
 
-```{r pre-042-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-042")
-```
-
 ### 7.2 Matriz de confusión y reporte de clasificación {-}
 
 ```{r pre-044}
@@ -524,10 +469,6 @@ reporte <- map_dfr(c(`No Churn` = 0, Churn = 1), function(clase) {
 print(reporte, digits = 2)
 ```
 
-```{r pre-044-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-044")
-```
-
 ```{r pre-045}
 as.data.frame(cm) |>
   mutate(Real = factor(Real, labels = c("No Churn", "Churn")),
@@ -540,10 +481,6 @@ as.data.frame(cm) |>
   labs(x = "Predicción", y = "Real", title = "Matriz de confusión - Regresión Logística") +
   theme_minimal() +
   theme(plot.title = element_text(face = "bold", hjust = 0.5))
-```
-
-```{r pre-045-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-045")
 ```
 
 ### 7.3 Curva ROC {-}
@@ -559,10 +496,6 @@ ggplot(curva, aes(1 - specificity, sensitivity)) +
        title = "Curva ROC - Regresión Logística") +
   theme_minimal() +
   theme(plot.title = element_text(face = "bold", hjust = 0.5), legend.position = c(0.7, 0.1))
-```
-
-```{r pre-047-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-047")
 ```
 
 ### 7.4 Interpretación del resultado {-}
@@ -596,10 +529,6 @@ print(as.data.frame(ranking), row.names = FALSE)
 
 cat("\nCoeficientes específicos de gender y PhoneService (con su puesto):\n")
 print(as.data.frame(filter(ranking, str_detect(variable, "gender|PhoneService"))), row.names = FALSE)
-```
-
-```{r pre-050-salida, echo=FALSE, eval=TRUE}
-salida("pre/pre-050")
 ```
 
 > Corrección respecto a la lectura inicial. Para `gender` (coeficiente 0.029, puesto 21 de 24) la conclusión del EDA se sostiene: aporta muy poco a este modelo. Para `PhoneService` no se sostiene igual de bien: su coeficiente (−0.3165) lo ubica en el puesto 12 de 24, por encima —en magnitud— de `Dependents` (−0.232), `SeniorCitizen` (0.154), `Partner` (0.019) y otras variables que sí se consideran informativas. No es de los coeficientes más grandes, pero tampoco es de los más pequeños.

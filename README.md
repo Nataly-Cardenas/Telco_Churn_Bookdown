@@ -15,15 +15,18 @@ Telco_Churn_Bookdown/
 ├── 04-codigo-experimento.Rmd    # Apéndice: código del entrenamiento de las 112 configuraciones
 ├── 05-paper.Rmd                 # Paper
 ├── 06-guia-repositorio.Rmd      # Guía del repositorio
-├── R/salidas.R                  # Código plegable e inserción de las salidas guardadas
-├── salidas/                     # Salidas del Jupyter Book (tablas, figuras Plotly e imágenes)
+├── R/salidas.R                  # Opciones de knitr (ejecución del código) y código plegable
+├── WA_Fn-UseC_-Telco-Customer-Churn.csv   # Datos originales (Telco Customer Churn, IBM)
+├── train_index.csv, test_index.csv       # Índices de la partición 80/20 del proyecto
+├── resultados_modelado/         # Resultados guardados del experimento de 112 configuraciones
+├── complementos/                # Código Python de los experimentos complementarios (se muestra en el libro)
 ├── style/                       # Estilos y barra superior del libro
 ├── Imagenes/, paper/            # Logo, favicon, PDF y figuras del paper
 ├── _bookdown.yml, _output.yml   # Configuración de Bookdown
 └── construir_libro.R            # Construye el libro en _book/
 ```
 
-Igual que el Jupyter Book (que se publica con `execute_notebooks: off`), el libro no vuelve a ejecutar los análisis al construirse: los bloques de código R tienen `eval = FALSE` y las salidas se insertan desde `salidas/`.
+Al construir el libro se ejecuta el código R de cada capítulo: todas las tablas, gráficas y resultados que se publican los genera R en ese momento a partir de los datos. El EDA y el preprocesamiento parten del CSV original; el modelado avanzado lee los resultados guardados del experimento en `resultados_modelado/` (las 112 configuraciones se entrenaron en Python y no se vuelven a entrenar) y, mediante `reticulate`, carga los pipelines finales de scikit-learn para las explicaciones SHAP. `reticulate` crea automáticamente, con `uv`, un entorno de Python con las versiones del experimento.
 
 El apéndice del código del experimento es la excepción al código en R: igual que en el Jupyter Book, reproduce tal cual las celdas de Python que entrenaron las 112 configuraciones (guardadas en `source_snapshot.json`), porque su objetivo es mostrar el código exacto que se ejecutó. En el modelado avanzado, las funciones de los experimentos complementarios (`complementos/`, también en Python) se muestran del mismo modo.
 
@@ -32,7 +35,9 @@ El apéndice del código del experimento es la excepción al código en R: igual
 Se necesita R (4.1 o superior). RStudio ya incluye Pandoc; si no usas RStudio, instala también [Pandoc](https://pandoc.org/installing.html).
 
 ```r
-install.packages(c("bookdown", "rmarkdown", "knitr", "htmltools", "bslib", "downlit", "xml2"))
+install.packages(c("bookdown", "rmarkdown", "knitr", "htmltools", "bslib", "downlit", "xml2",
+                   "readr", "dplyr", "tidyr", "purrr", "stringr", "tibble", "plotly", "digest", "moments",
+                   "jsonlite", "ggplot2", "patchwork", "tidymodels", "glmnet", "kableExtra", "reticulate", "shapviz"))
 ```
 
 Desde la carpeta del proyecto:

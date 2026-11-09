@@ -34,6 +34,12 @@ library(yardstick)
 library(knitr)
 library(kableExtra)
 
+# Los pipelines finales, el bootstrap (.npz) y las atribuciones SHAP se guardaron con Python (scikit-learn).
+# reticulate crea un entorno de Python con las mismas versiones del experimento para leerlos sin reajustar.
+reticulate::py_require(c("numpy==2.0.2", "pandas==2.3.3", "scikit-learn==1.6.1", "imbalanced-learn==0.14.0",
+                         "xgboost==3.0.5", "cloudpickle==3.1.2", "joblib==1.5.3", "scipy==1.15.3"),
+                       python_version = "3.12")
+
 ROOT <- getwd()
 ANALISIS <- file.path(ROOT, "resultados_modelado/analisis_final")
 OFICIAL <- file.path(ROOT, "resultados_modelado/oficial/20260920T030103_517c8c6b7906_69c6c7")
@@ -107,10 +113,6 @@ tabla(tibble(Familias = n_distinct(UNIDADES$model), Balanceos = n_distinct(UNIDA
              `Unidades terminadas` = nrow(UNIDADES), `Candidatos por búsqueda` = as.integer(min(UNIDADES$evaluations))))
 ```
 
-```{r mod-004-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-004")
-```
-
 **Interpretación.** La cobertura corresponde a 112 × 3 × 5 = 1.680 unidades externas, sin configuraciones omitidas. Cada búsqueda consumió 24 evaluaciones únicas. Las realizaciones no amplían el número de datasets ni convierten los folds solapados en observaciones independientes. Estos resultados son oficiales; los pilotos técnicos no se incorporan a las tablas.
 
 ### 1.3 Pipeline: transformaciones y prevención de fuga de información {-}
@@ -141,10 +143,6 @@ tabla(tribble(
 ))
 ```
 
-```{r mod-008-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-008")
-```
-
 Interpretación metodológica. Las cuatro estrategias cambian el aprendizaje, no la prevalencia de evaluación. Logística, árboles, Random Forest y SVM usan pesos de clase nativos; GaussianNB y XGBoost reciben pesos por observación; KNN pondera explícitamente el voto de sus vecinos por clase. Esta última es una adaptación documentada, no una opción nativa `class_weight` de KNN. Los pesos se recalculan por entrenamiento y no se asume que sus scores queden calibrados.
 
 ### 1.4 Validación cruzada anidada y registro por unidad {-}
@@ -166,10 +164,6 @@ tabla(head(select(UNIDADES, experiment_id, replicate, outer_fold, best_inner_f1,
                   model_seed, sampler_seed, optimizer_seed), 3))
 ```
 
-```{r mod-011-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-011")
-```
-
 **Interpretación.** Las filas ilustran el contrato del registro, no una comparación de ganadores. `best_inner_f1` selecciona hiperparámetros; `f1_positive` corresponde al fold externo reservado. Mantener ambos campos separados evita reportar como generalización el valor usado para optimizar. La tabla maestra conserva este contrato en las 1.680 unidades.
 
 ### 1.5 Espacios de búsqueda y presupuesto común {-}
@@ -187,10 +181,6 @@ tabla(tribble(
   "XGBoost", "T={100,300}; depth={2,4,6}; eta={0.03,0.1}; subsample={0.8,1}", "eta log [0.03,0.1]; subsample continuo [0.8,1]", "Explora capacidad, paso de boosting y submuestreo sin usar early stopping externo.",
   "SVM RBF", "C={0.01,0.1,1,10,100,1000}; gamma={0.001,0.01,0.1,1}", "C y gamma continuos log en los mismos límites", "C controla regularización; gamma controla alcance del kernel."
 ))
-```
-
-```{r mod-014-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-014")
 ```
 
 Interpretación del diseño. KNN, árbol y Random Forest tienen 24 candidatos posibles en los cuatro métodos: consumir 24 evaluaciones únicas agota su soporte, por lo que pueden empatar al terminar. GaussianNB, Logística, XGBoost y SVM incluyen parámetros continuos fuera de los puntos concretos de Grid. La comparación evalúa las implementaciones y estos presupuestos, no una superioridad universal entre familias de optimización.
@@ -240,10 +230,6 @@ stopifnot(nrow(ISO_UNIDADES) == nrow(PRINCIPAL), nrow(PRINCIPAL) == 560,
 mostrar_codigo("calibracion_isotonica", "calibrar_unidad")
 ```
 
-```{r mod-019-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-019")
-```
-
 ```{r mod-020}
 confiabilidad <- function(y, probability, bins = 10) {
   # Calcula ECE y frecuencias por intervalos uniformes de probabilidad.
@@ -276,7 +262,7 @@ predicciones_oof <- function(eid) {
   filas <- PRINCIPAL |> filter(experiment_id == eid) |> arrange(outer_fold)
   data <- pmap_dfr(filas, function(...) {
     row <- list(...)
-    folder <- file.path(OFICIAL, str_replace_all(row$attempt_path, fixed("\\"), "/"))
+    folder <- file.path(OFICIAL, str_replace_all(row$attempt_path, stringr::fixed("\\"), "/"))
     pred <- read_csv(file.path(folder, "predictions.csv"), show_col_types = FALSE)
     calibrated <- read_csv(file.path(folder, "calibrated_predictions.csv"), show_col_types = FALSE)
     stopifnot(identical(pred$row_id, calibrated$row_id))
@@ -296,7 +282,8 @@ predicciones_oof <- function(eid) {
 panel_evaluacion <- function(eid) {
   # Traza confusión, ROC y confiabilidad (nativa, sigmoid e isotónica) desde scores externos guardados.
   data <- predicciones_oof(eid)
-  cm <- as.data.frame(table(`Clase real` = factor(data$y_true, 0:1), Predicción = factor(data$y_pred, 0:1)))
+  cm <- as.data.frame(table(`Clase real` = factor(data$y_true, 0:1), Predicción = factor(data$y_pred, 0:1))) |>
+    rename(`Clase real` = Clase.real)   # as.data.frame() cambia el espacio por un punto
   confusion <- ggplot(cm, aes(Predicción, `Clase real`, fill = Freq)) +
     geom_tile() + geom_text(aes(label = Freq, colour = Freq > max(Freq) / 2), show.legend = FALSE) +
     scale_fill_distiller(palette = "Blues", direction = 1, guide = "none") +
@@ -348,18 +335,10 @@ Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas 
 tabla(resultados_familia("knn"))
 ```
 
-```{r mod-023-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-023")
-```
-
 **Interpretación.** El mayor F1 medio observado fue 0.6126 ± 0.0118, con SMOTE y TPE. Hay 4 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5916; la diferencia descriptiva es +0.0210. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.8227, Precision=0.4880 y AUC=0.8307 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
 
 ```{r mod-025}
 panel_evaluacion("knn__smote__bayesian_tpe")
-```
-
-```{r mod-025-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-025")
 ```
 
 Lectura del panel. La matriz OOF registra TN=2848, FP=1291, FN=265 y TP=1230; los 265 falsos negativos son abandonos omitidos y las 1291 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8307, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad, la curva nativa queda muy por debajo de la diagonal: el modelo promete más abandono del que ocurre. Brier pasa de 0.1824 a 0.1414 con sigmoid y a 0.1417 con isotónica; ECE baja de 0.1719 a 0.0219 y 0.0267 (medias externas). Aquí Platt gana por poco, algo esperable con un score de pocos valores como la fracción de vecinos. La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
@@ -372,18 +351,10 @@ Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas 
 tabla(resultados_familia("naive_bayes"))
 ```
 
-```{r mod-028-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-028")
-```
-
 **Interpretación.** El mayor F1 medio observado fue 0.6198 ± 0.0180, con Sin balanceo y Random. Hay 1 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.6198; la diferencia descriptiva es +0.0000. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7739, Precision=0.5172 y AUC=0.8301 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
 
 ```{r mod-030}
 panel_evaluacion("naive_bayes__none__random")
-```
-
-```{r mod-030-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-030")
 ```
 
 Lectura del panel. La matriz OOF registra TN=3056, FP=1083, FN=338 y TP=1157; los 338 falsos negativos son abandonos omitidos y las 1083 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8301, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad, GaussianNB empuja casi todas las probabilidades hacia 0 o 1, el comportamiento típico cuando el supuesto de independencia no se cumple. Brier pasa de 0.2135 a 0.1471 con sigmoid y a 0.1417 con isotónica; ECE baja de 0.2063 a 0.0278 y 0.0280. Es la familia donde la flexibilidad isotónica rinde más en Brier, porque la distorsión no tiene forma de S. La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
@@ -396,18 +367,10 @@ Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas 
 tabla(resultados_familia("logistic"))
 ```
 
-```{r mod-033-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-033")
-```
-
 **Interpretación.** El mayor F1 medio observado fue 0.6340 ± 0.0188, con SMOTE y Grid. Hay 1 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5979; la diferencia descriptiva es +0.0361. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7806, Precision=0.5343 y AUC=0.8441 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
 
 ```{r mod-035}
 panel_evaluacion("logistic__smote__grid")
-```
-
-```{r mod-035-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-035")
 ```
 
 Lectura del panel. La matriz OOF registra TN=3117, FP=1022, FN=328 y TP=1167; los 328 falsos negativos son abandonos omitidos y las 1022 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8441, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad, la logística entrenada con SMOTE conserva la forma sigmoide pero desplazada hacia arriba, justo el caso para el que Platt está pensado. Brier pasa de 0.1625 a 0.1356 con sigmoid y a 0.1358 con isotónica; ECE baja de 0.1442 a 0.0240 y 0.0242: las dos ramas prácticamente empatan. La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
@@ -420,18 +383,10 @@ Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas 
 tabla(resultados_familia("decision_tree"))
 ```
 
-```{r mod-038-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-038")
-```
-
 **Interpretación.** El mayor F1 medio observado fue 0.6119 ± 0.0093, con SMOTE y TPE. Hay 4 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5892; la diferencia descriptiva es +0.0228. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7304, Precision=0.5270 y AUC=0.8242 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
 
 ```{r mod-040}
 panel_evaluacion("decision_tree__smote__bayesian_tpe")
-```
-
-```{r mod-040-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-040")
 ```
 
 Lectura del panel. La matriz OOF registra TN=3157, FP=982, FN=403 y TP=1092; los 403 falsos negativos son abandonos omitidos y las 982 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8242, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad, el árbol solo produce tantas probabilidades como hojas, y eso se nota en la curva escalonada. Brier pasa de 0.1672 a 0.1442 con sigmoid y a 0.1439 con isotónica; ECE baja de 0.1276 a 0.0371 y 0.0303. La isotónica se adapta mejor a esos saltos. La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
@@ -444,18 +399,10 @@ Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas 
 tabla(resultados_familia("random_forest"))
 ```
 
-```{r mod-043-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-043")
-```
-
 **Interpretación.** El mayor F1 medio observado fue 0.6384 ± 0.0227, con SMOTE y TPE. Hay 4 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5741; la diferencia descriptiva es +0.0644. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7351, Precision=0.5646 y AUC=0.8438 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
 
 ```{r mod-045}
 panel_evaluacion("random_forest__smote__bayesian_tpe")
-```
-
-```{r mod-045-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-045")
 ```
 
 Lectura del panel. La matriz OOF registra TN=3289, FP=850, FN=396 y TP=1099; los 396 falsos negativos son abandonos omitidos y las 850 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8438, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad, Random Forest muestra la curva comprimida hacia el centro que suele dar el promedio de árboles, desplazada por SMOTE. Brier pasa de 0.1515 a 0.1363 con sigmoid y a 0.1361 con isotónica; ECE baja de 0.1106 a 0.0292 y 0.0269. La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
@@ -468,18 +415,10 @@ Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas 
 tabla(resultados_familia("xgboost"))
 ```
 
-```{r mod-048-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-048")
-```
-
 **Interpretación.** El mayor F1 medio observado fue 0.6380 ± 0.0206, con SMOTE y Random. Hay 1 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5887; la diferencia descriptiva es +0.0493. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7452, Precision=0.5585 y AUC=0.8461 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. Los valores nativos de Brier/ECE se analizan junto con la rama calibrada, sin utilizarlos para seleccionar hiperparámetros.
 
 ```{r mod-050}
 panel_evaluacion("xgboost__smote__random")
-```
-
-```{r mod-050-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-050")
 ```
 
 Lectura del panel. La matriz OOF registra TN=3254, FP=885, FN=381 y TP=1114; los 381 falsos negativos son abandonos omitidos y las 885 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8461, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad, XGBoost sobreestima el abandono en todo el rango por efecto de SMOTE. Brier pasa de 0.1493 a 0.1357 con sigmoid y a 0.1359 con isotónica; ECE baja de 0.1030 a 0.0303 y 0.0281. La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
@@ -492,18 +431,10 @@ Se contrastan los cuatro balanceos y los cuatro optimizadores usando las mismas 
 tabla(resultados_familia("svm"))
 ```
 
-```{r mod-053-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-053")
-```
-
 **Interpretación.** El mayor F1 medio observado fue 0.6307 ± 0.0190, con SMOTE y Genético. Hay 1 configuración(es) empatada(s) en ese máximo a precisión numérica. La mejor configuración sin balanceo obtuvo 0.5776; la diferencia descriptiva es +0.0531. Se compara el máximo de cada grupo, no un efecto causal aislado del balanceo. Recall=0.7786, Precision=0.5304 y AUC=0.8392 muestran aspectos distintos del desempeño. La selección por máximo entre configuraciones debe interpretarse con cautela. En SVM, Brier/ECE nativos no aplican: su margen no es una probabilidad; se evalúa su rama sigmoid más adelante.
 
 ```{r mod-055}
 panel_evaluacion("svm__smote__genetic")
-```
-
-```{r mod-055-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-055")
 ```
 
 Lectura del panel. La matriz OOF registra TN=3105, FP=1034, FN=331 y TP=1164; los 331 falsos negativos son abandonos omitidos y las 1034 falsas alertas afectan a permanentes. La ROC representa el orden de scores a distintos umbrales; el AUC medio por fold es 0.8392, sin confundirse con el AUC de predicciones concatenadas. En confiabilidad, SVM no tiene probabilidad nativa: su margen se convierte en probabilidad solo a través de los recalibradores. La rama sigmoid logra Brier=0.1374 y ECE=0.0224; la isotónica, 0.1377 y 0.0243. Platt fue diseñado justamente para márgenes de SVM y aquí conserva una ligera ventaja. La calibración se ajustó dentro de entrenamiento y no cambia el ranking principal de F1; no se selecciona una nueva variante mirando este panel.
@@ -522,10 +453,6 @@ vista <- REPRESENTANTES |> select(model, experiment_id) |> inner_join(CALIBRACIO
 tabla(vista |>
         select(model, `Brier nativo` = brier, `Brier sigmoid` = cal_brier, `Brier isotónica` = iso_brier,
                `ECE nativo` = ece, `ECE sigmoid` = cal_ece, `ECE isotónica` = iso_ece))
-```
-
-```{r mod-058-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-058")
 ```
 
 **Interpretación.** En los representantes, las dos recalibraciones recortan el ECE a una fracción de su valor nativo (de 0.10–0.21 a 0.02–0.04) y el Brier entre 9 % y 34 %. La diferencia entre ellas es de otro orden de magnitud: en Brier nunca supera 0.006 y casi siempre está en la cuarta cifra decimal. La isotónica saca su ventaja más visible en GaussianNB, cuyas probabilidades extremas no siguen una forma de S, y en el árbol, cuyas probabilidades son escalones; en Random Forest y XGBoost recorta un poco más el ECE, en la logística empata y en KNN y SVM gana Platt. Con unas 1.500 observaciones de calibración por fold, la isotónica no mostró el sobreajuste típico de muestras pequeñas, aunque entrega pocas probabilidades distintas por fold (en promedio, de 14 en el árbol a 41 en la logística) frente al continuo de Platt.
@@ -552,10 +479,6 @@ dispersion <- function(a, b, titulo) {
 }
 patchwork::wrap_plots(dispersion("cal_brier", "iso_brier", "Brier") + theme(legend.position = "none"),
                       dispersion("cal_ece", "iso_ece", "ECE"), nrow = 1)
-```
-
-```{r mod-060-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-060")
 ```
 
 **Interpretación.** En el universo completo, la isotónica mejora a la vez Brier y ECE frente a la probabilidad nativa en 84 de las 96 configuraciones que la tienen (sigmoid lo logra en 80). Entre ellas, la isotónica tiene menor ECE que sigmoid en 74 de 112 configuraciones y menor Brier en 67. En la figura casi todos los puntos caen pegados a la diagonal: las dos ramas corrigen el mismo sesgo y la elección entre ellas mueve el Brier en la cuarta cifra decimal. La conclusión práctica es usar isotónica cuando la distorsión no tiene forma de S (GaussianNB, árboles) y Platt cuando el score ya es un margen o una fracción de vecinos (SVM, KNN). Un aviso sobre el F1: calibrar desplaza las probabilidades hacia la prevalencia real y, con el umbral fijo en 0.5, las dos ramas detectan menos abandonos: el F1 de casi todos los representantes baja, hasta 0.10 en el árbol, y solo GaussianNB con sigmoid lo mantiene. La calibración sirve para leer las probabilidades como riesgos; para decidir a quién contactar habría que elegir el umbral con costos explícitos, no reutilizar el 0.5.
@@ -602,10 +525,6 @@ vista <- REPRESENTANTES |>
 tabla(select(vista, -experiment_id))
 ```
 
-```{r mod-064-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-064")
-```
-
 **Interpretación.** La DS externa resume cinco folds de una realización; las columnas por semilla resumen variación algorítmica sobre los mismos folds. `low` y `high` delimitan IC condicionales del 95 %. Solapamiento o separación visual no constituye un contraste pareado válido. Los empates entre optimizadores en espacios agotados pueden coexistir con cambios entre realizaciones, debido a modelo o remuestreo.
 
 ## 2. Comparación de métodos de optimización {-}
@@ -627,10 +546,6 @@ EFICIENCIA <- comparacion |>
   summarise(mean_f1_gain = mean(gain_f1_vs_grid), median_time_ratio = median(time_ratio_vs_grid),
             fraction_higher = mean(gain_f1_vs_grid > 1e-12), comparisons = n(), .groups = "drop")
 tabla(EFICIENCIA)
-```
-
-```{r mod-067-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-067")
 ```
 
 **Interpretación.** A ocho evaluaciones, TPE, Genético y Random aventajan descriptivamente a Grid en F1 interno medio en 0,00685, 0,00632 y 0,00656. A 24, las diferencias son 0,00035, −0,00005 y −0,00033, con razones medianas de tiempo próximas a uno. No se observa una ventaja universal de calidad o velocidad. El orden de Grid, los rangos continuos y el agotamiento de dominios finitos condicionan la comparación; estos deltas internos no son ganancias de generalización.
@@ -656,18 +571,10 @@ grafico_anytime <- function(por_tiempo = FALSE) {
 grafico_anytime()
 ```
 
-```{r mod-070-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-070")
-```
-
 **Interpretación.** Cada trayectoria muestra el mejor F1 interno medio acumulado por familia y evaluaciones únicas. Las subidas indican que se encontró un candidato interno mejor; una meseta significa ausencia de mejora dentro del presupuesto visitado. En dominios finitos agotados, el mismo resultado final no distingue eficiencia temprana ni prueba equivalencia de los algoritmos en otros espacios.
 
 ```{r mod-072}
 grafico_anytime(por_tiempo = TRUE)
-```
-
-```{r mod-072-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-072")
 ```
 
 **Interpretación.** El eje temporal permite observar el coste de alcanzar los valores internos, que varía entre familias. Las trayectorias combinan búsquedas emparejadas pero no forman un experimento con presupuestos temporales iguales. La carga del equipo y los hiperparámetros influyen en los tiempos; no se atribuye causalmente a un optimizador cualquier separación visual.
@@ -695,10 +602,6 @@ div |>
   theme(legend.position = c(0.88, 0.25))
 ```
 
-```{r mod-075-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-075")
-```
-
 **Interpretación.** La fracción única y la distancia describen aspectos diferentes: individuos distintos pueden estar cerca en el espacio genético. Elitismo conserva el mejor fitness; mutación y el inmigrante de rescate permiten introducir novedad. Las medias por generación incluyen solo búsquedas que llegaron a esa generación, de modo que no se interpretan como una única población longitudinal ni como evidencia de convergencia global.
 
 ### 2.2 Presupuesto y coste empírico {-}
@@ -716,10 +619,6 @@ COSTE <- UNIDADES |>
             .groups = "drop") |>
   mutate(seconds_per_evaluation = search_mean / 24)
 tabla(COSTE)
-```
-
-```{r mod-078-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-078")
 ```
 
 **Interpretación.** `search_mean` y `search_std` describen tiempos por búsqueda; `seconds_per_evaluation` distribuye el tiempo medio entre 24 evaluaciones únicas. `evaluations` cuenta ajustes de candidatos, mientras `proposals` incluye intentos repetidos, por lo que no son sinónimos. Las diferencias reflejan familia, capacidad y coste de propuestas; un mayor tiempo no implica mejor clasificación. El tiempo de inferencia corresponde al bloque externo evaluado, no a una sola consulta.
@@ -745,10 +644,6 @@ COMPLEJIDAD <- tribble(
 tabla(COMPLEJIDAD)
 ```
 
-```{r mod-081-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-081")
-```
-
 **Interpretación.** KNN desplaza buena parte del costo a la consulta; GaussianNB y Logística tienen inferencia proporcional a p; los árboles dependen de su profundidad y los ensambles acumulan el costo de cada árbol. SVM RBF depende además del número de vectores soporte y de la convergencia del solver. Paralelizar reduce el tiempo de pared, pero no cambia estas cotas de trabajo. Las 112 configuraciones usaron las implementaciones exactas; las alternativas que cambian esas cotas (índices y vecinos aproximados en KNN, versiones lineales o aproximadas de SVM, método exacto frente a histogramas en XGBoost) se miden en la sección 2.6.
 
 ```{r mod-083}
@@ -757,10 +652,6 @@ EMPIRICO <- UNIDADES |>
   summarise(refit_seconds = mean(refit_seconds), predict_seconds = mean(predict_seconds),
             rss_mib = mean(rss_peak_mib), n_effective = mean(n_effective), p = mean(p))
 tabla(EMPIRICO)
-```
-
-```{r mod-083-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-083")
 ```
 
 **Interpretación.** Los reajustes medios de Random Forest (≈1,031 s) y SVM (≈0,778 s) superan los de GaussianNB (≈0,096 s), mientras SVM y KNN tienen el mayor costo de predicción por bloque (≈0,498 y ≈0,205 s). Es coherente con sus operaciones, pero esta tabla por sí sola no verifica una ley de escalamiento, porque mezcla hiperparámetros y tamaños tras balancear. Para eso, la sección 2.6 varía n y p de forma controlada y estima el exponente empírico de cada modelo.
@@ -782,10 +673,6 @@ BENCH_RESUMEN <- BENCH |>
 tabla(BENCH_RESUMEN)
 ```
 
-```{r mod-086-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-086")
-```
-
 **Interpretación.** Durante el entrenamiento de las 112 configuraciones, la política de memoria activó un solo trabajador incluso cuando se pidieron dos. Los F1 internos son iguales, pero estos tiempos no demuestran aceleración por paralelismo. Esa medición quedó pendiente y se hizo después, sin la restricción de memoria, en la sección 2.6: allí sí se compara uno, dos, cuatro y ocho trabajadores, con los backends `loky` y `threading`.
 
 ```{r mod-088}
@@ -797,7 +684,7 @@ tabla_perfil <- function(texto, filas = 15) {
   m <- m[!is.na(m[, 1]) & m[, 2] != "ncalls", , drop = FALSE]
   frame <- tibble(ncalls = m[, 2], tottime = as.numeric(m[, 3]), `percall (tottime)` = as.numeric(m[, 4]),
                   cumtime = as.numeric(m[, 5]), `percall (cumtime)` = as.numeric(m[, 6]),
-                  `filename:lineno(function)` = str_remove(str_replace_all(m[, 7], fixed("\\"), "/"), "^.*?site-packages/")) |>
+                  `filename:lineno(function)` = str_remove(str_replace_all(m[, 7], stringr::fixed("\\"), "/"), "^.*?site-packages/")) |>
     head(filas)
   miles <- function(n) format(as.integer(n), big.mark = ".", decimal.mark = ",")
   titulo <- sprintf("%s llamadas a funciones (%s primitivas) en %.3f s · ordenado por tiempo acumulado · primeras %d funciones",
@@ -811,10 +698,6 @@ tabla_perfil <- function(texto, filas = 15) {
 
 # Se conserva la medición histórica: volver a perfilar requeriría otro ajuste.
 tabla_perfil(read_file(file.path(ANALISIS, "perfil_logistica.txt")))
-```
-
-```{r mod-088-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-088")
 ```
 
 **Interpretación.** El caso perfilado de Logística registró 0,063 s, con aproximadamente 0,041 s acumulados en preparación interna del Pipeline y 0,020 s en el adaptador de ajuste. Los tiempos acumulados incluyen llamadas anidadas y no deben sumarse como categorías independientes. Es un caso auxiliar, no una estimación del coste total de los 112 experimentos.
@@ -854,10 +737,6 @@ stopifnot(all(count(MULTIFIDELIDAD, model, method)$n == 5))
 mostrar_codigo("multifidelidad", "evaluar_fold")
 ```
 
-```{r mod-091-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-091")
-```
-
 ```{r mod-092}
 MF_RESUMEN <- MULTIFIDELIDAD |>
   group_by(model, method) |>
@@ -869,10 +748,6 @@ OFICIAL_RANDOM <- RESUMEN |> filter(balance == "smote", optimizer == "random") |
   select(model, f1_random_seccion_1 = f1_positive_mean)
 MF_RESUMEN <- left_join(MF_RESUMEN, OFICIAL_RANDOM, by = "model")
 tabla(MF_RESUMEN)
-```
-
-```{r mod-092-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-092")
 ```
 
 **Interpretación.** Successive Halving hizo más ajustes que la búsqueda completa (120 frente a 72 por fold) pero casi todos fueron baratos: medidos en ajustes de fidelidad completa, consumió 12 frente a 72, la reducción de 6× que predice el diseño. En tiempo de pared la ganancia fue de 3.7× en Random Forest y de 7.1× en SVM, pero solo de 1.6× en XGBoost. La diferencia se explica por los costos fijos de cada ajuste: preprocesar, aplicar SMOTE y crear el modelo cuesta lo mismo con 12 árboles que con 324. En XGBoost con `hist` cada árbol es tan barato que esos costos fijos dominan y recortar árboles ahorra poco. En SVM ocurre lo contrario: reducir la muestra ataca directamente el término $O(n^2)$, y el ahorro supera incluso al teórico. En calidad, el F1 externo de SH quedó prácticamente igual al de la búsqueda completa en Random Forest (0.638 frente a 0.636) y SVM (0.627 en ambos), y por debajo en XGBoost (0.628 frente a 0.639). La columna `f1_random_seccion_1` recuerda el F1 que obtuvo Random con SMOTE en la sección 1, con su propio espacio de búsqueda, como orden de magnitud y no como comparación pareada.
@@ -898,10 +773,6 @@ MULTIFIDELIDAD |>
   labs(x = "Tiempo de búsqueda por fold externo (s)", y = "F1 en el fold externo", colour = NULL,
        title = "Calidad frente a costo: cada punto es un fold externo") +
   theme_minimal() + guides(colour = guide_legend(ncol = 2))
-```
-
-```{r mod-094-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-094")
 ```
 
 **Interpretación.** Cada punto de la figura es un fold externo. En Random Forest y SVM los círculos (SH) quedan a la izquierda de los cuadrados (búsqueda completa) sin bajar: misma calidad con una fracción del tiempo. En dos folds de Random Forest y uno de SVM ambos métodos eligieron exactamente el mismo candidato, lo que muestra que la eliminación temprana no se equivocó de ganador. XGBoost es el caso en que la multifidelidad no conviene: la ganancia de tiempo es pequeña y en cuatro de cinco folds SH eligió un candidato peor, con una pérdida media de 0.011 en F1.
@@ -933,10 +804,6 @@ GPU <- fromJSON(file.path(CARPETA_OC, "gpu.json"))
 mostrar_codigo("optimizacion_computacional", "Medidor", "correr")
 ```
 
-```{r mod-097-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-097")
-```
-
 ```{r mod-098}
 OC_RESUMEN <- COMPARACIONES |>
   mutate(variant = factor(variant, levels = unique(variant)), model = factor(model, levels = unique(model))) |>
@@ -952,10 +819,6 @@ OC_RESUMEN <- COMPARACIONES |>
   ungroup() |>
   mutate(across(c(model, variant), as.character))
 tabla(OC_RESUMEN)
-```
-
-```{r mod-098-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-098")
 ```
 
 **Interpretación.** Los tiempos son medias de cinco folds de la mediana de cinco repeticiones; `aceleración` es estándar dividido por variante, de modo que valores mayores que 1 significan más rápido.
@@ -998,10 +861,6 @@ escalamiento <- function(eje) {
 patchwork::wrap_plots(escalamiento("n") + theme(legend.position = "none"), escalamiento("p"), nrow = 1)
 ```
 
-```{r mod-101-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-101")
-```
-
 **Interpretación.** Los dos casos más informativos coinciden con la teoría. SVM RBF tiene exponente 2.0 en $n$: duplicar los datos cuadruplica el tiempo, lo esperado para un solver que trabaja sobre la matriz de kernel y la razón de que en la sección 2.5 recortar filas fuera tan eficaz. XGBoost `exact` (0.99) y la logística (1.01) crecen linealmente, como predice su costo por barrido de los datos.
 
 Los exponentes menores que 1 no contradicen la teoría, la esconden: GaussianNB, Random Forest, XGBoost `hist` y KNN tardan milisegundos con estos tamaños y su tiempo lo dominan costos fijos (validar entradas, crear estructuras, lanzar hilos) que no dependen de $n$. Con 6.400 filas el término lineal todavía no se ve. El exponente negativo de KD-Tree se debe a su primera medición ($n=800$), mucho más lenta que las demás por costos de arranque; sin ese punto la curva es casi plana, lo esperable para una búsqueda que, con 24 dimensiones, ya no poda bien. En $p$, casi todos los modelos crecen de forma aproximadamente lineal (exponentes entre 0.96 y 1.5), como indican sus cotas $O(np)$. El RBF crece menos (0.75) porque su costo lo dominan las iteraciones del solver sobre $n$ y no el producto escalar en $p$. El crecimiento lineal en $p$ de KD-Tree confirma que con más dimensiones el índice deja de podar y la búsqueda se vuelve, en la práctica, exhaustiva.
@@ -1028,10 +887,6 @@ bind_rows(tibble(trabajadores = jobs, aceleracion = rf$aceleración_entrenamient
   theme_minimal()
 ```
 
-```{r mod-104-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-104")
-```
-
 **Interpretación.** Con cuatro trabajadores la validación cruzada termina 1.8 veces más rápido y los F1 son idénticos a los de la ejecución serial, así que paralelizar no cambia los resultados. La eficiencia cae del 69 % con dos procesos al 45 % con cuatro: cada fold dura menos de un segundo, y crear procesos, copiar los datos y recoger resultados se come buena parte de la ganancia. `threading` rinde un poco mejor que `loky` con dos trabajadores (1.61× frente a 1.39×) porque no copia los datos, y funciona aquí porque el trabajo pesado de scikit-learn ocurre en código C que libera el GIL. Con cuatro trabajadores ambos se igualan. La figura junta las tres mediciones: la curva de entrenamiento de Random Forest se aplana a partir de 4 hilos y su inferencia queda por debajo de 1. En este equipo, con 14 núcleos y 8 GB de RAM, el límite práctico lo puso la memoria y no el número de núcleos, y por eso las 112 configuraciones se entrenaron con un solo nivel de paralelismo.
 
 **GPU.** XGBoost con `device='cuda'` no pudo usar GPU: el equipo no tiene tarjeta NVIDIA y la versión instalada de XGBoost no está compilada con CUDA, así que la librería avisa y vuelve a CPU. No se reporta un factor de aceleración por GPU porque no hay forma honesta de medirlo en este hardware.
@@ -1047,12 +902,8 @@ for (nombre in names(perfiles)) {
   cat(sprintf("**%s**\n\n", perfiles[[nombre]]))
   print(tabla_perfil(read_file(file.path(CARPETA_OC, paste0("perfil_", nombre, ".txt")))))
 }
-avisos <- map_chr(GPU$avisos, ~ str_split_i(str_split_i(.x, fixed("WARNING: "), -1), fixed(": "), -1))
+avisos <- map_chr(GPU$avisos, ~ str_split_i(str_split_i(.x, stringr::fixed("WARNING: "), -1), stringr::fixed(": "), -1))
 cat("GPU:", GPU$estado, "|", paste(avisos, collapse = " / "), "\n")
-```
-
-```{r mod-107-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-107")
 ```
 
 **Interpretación.** En SVM, el 81 % del ajuste (0.98 de 1.20 s) ocurre dentro de `_dense_fit`, el solver de libsvm; preprocesar y aplicar SMOTE suma 0.06 s. En KNN, el 84 % de la predicción (0.138 de 0.164 s) es el cálculo de distancias por pares. Los dos perfiles dicen lo mismo: el cuello de botella es el núcleo del algoritmo y no el Pipeline, así que optimizar el preprocesamiento no tendría efecto visible. Eso explica también qué alternativas funcionaron: `LinearSVC` sustituye justo el solver que domina el costo de SVM, mientras que en KNN ni los índices ni los hilos reducen de forma apreciable el cálculo de distancias con 24 dimensiones y 1.127 consultas.
@@ -1091,10 +942,6 @@ tabla(select(FINAL, model, variant, complejidad, entrenamiento_s, inferencia_s, 
              aceleración_entrenamiento, aceleración_inferencia, delta_f1), decimales = 3)
 ```
 
-```{r mod-110-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-110")
-```
-
 **Interpretación.** El balance favorece claramente a tres cambios: `LinearSVC` (o Nyström si se quiere conservar algo de no linealidad) en lugar del SVC RBF, `hist` en lugar de `exact` en XGBoost y paralelizar los ajustes de Random Forest y la validación cruzada. Los tres reducen el tiempo sin pérdida de F1 mayor que 0.002. Los índices de KNN, `saga` y `partial_fit` no aceleran nada con un conjunto de este tamaño, aunque `partial_fit` sería la opción natural si los datos no cupieran en memoria. Early stopping ahorra frente a entrenar árboles de más, pero no frente a una búsqueda que ya eligió bien su número de árboles. Ninguna de estas variantes reemplaza a posteriori los resultados de la sección 1: miden cuánto se habría ganado y quedan como recomendación para el modelo propuesto.
 
 ## 3. Resultados finales, comparación estadística e interpretabilidad {-}
@@ -1116,8 +963,8 @@ MATRIZ <- PRINCIPAL |>
   pivot_wider(names_from = experiment_id, values_from = f1_positive) |>
   arrange(outer_fold) |>
   select(-outer_fold) |>
-  select(order(colnames(.data))) |>
-  as.matrix()
+  as.matrix() |>
+  (\(m) m[, sort(colnames(m)), drop = FALSE])()   # columnas en orden alfabético de experiment_id
 RANGOS <- t(apply(-MATRIZ, 1, rank, ties.method = "average"))
 RANGOS_MEDIOS <- sort(colMeans(RANGOS), method = "radix")
 prueba <- friedman.test(MATRIZ)
@@ -1129,18 +976,10 @@ stopifnot(isTRUE(all.equal(friedman$statistic, original$statistic, tolerance = 1
 tabla(friedman, decimales = 8)
 ```
 
-```{r mod-113-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-113")
-```
-
 **Interpretación.** Friedman produjo χ²=422,2858, gl=111 y p exploratorio=7,72×10⁻³⁸; W=0,7609 indica concordancia del orden bajo este resumen. El valor nominal activa el post-hoc dentro de la secuencia exploratoria. La dependencia entre folds impide tratarlo como rechazo confirmatorio obtenido de 112 métodos sobre datasets independientes.
 
 ```{r mod-115}
 tabla(head(tibble(experiment_id = names(RANGOS_MEDIOS), mean_rank = unname(RANGOS_MEDIOS)), 12))
-```
-
-```{r mod-115-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-115")
 ```
 
 **Interpretación.** XGBoost–SMOTE–Random tiene el menor rango medio (15,0), seguido de Logística–SMOTE–Grid (15,6). Random Forest–SMOTE alcanza el mayor F1 medio, pero su rango medio es 16,1. No hay contradicción: promediar magnitudes y promediar posiciones responde a resúmenes diferentes. Esta tabla conserva evidencia descriptiva aun cuando la inferencia confirmatoria no es justificable.
@@ -1202,10 +1041,6 @@ ggplot() +
   theme(plot.title = element_text(hjust = 0.5, size = 16), plot.caption = element_text(hjust = 0.5, size = 10))
 ```
 
-```{r mod-119-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-119")
-```
-
 **Interpretación.** La CD es grande respecto del rango posible, por lo que solo separaciones extremas aparecen bajo el umbral nominal. Las mejores configuraciones quedan conectadas con muchas alternativas. Las barras no prueban igualdad y los 31 pares nominales no justifican afirmaciones confirmatorias con folds dependientes. Se conserva el universo completo de 112 configuraciones en el diagrama.
 
 ```{r mod-121}
@@ -1246,10 +1081,6 @@ efectos <- combn(ids_finalistas, 2, simplify = FALSE) |>
 tabla(efectos)
 ```
 
-```{r mod-121-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-121")
-```
-
 **Interpretación.** Las diferencias de F1 se calculan emparejando folds, no tratando los resultados como muestras independientes. Entre Random Forest–SMOTE y XGBoost–SMOTE–Random la diferencia media es de 0.0005 y el δ de Cliff sobre las 15 unidades (3 semillas × 5 folds) es −0.06: despreciable y, además, con signo contrario al de la media. Frente a la logística, ambos ensambles tienen δ ≈ 0.10 y $d_z$ entre 0.23 y 0.31, también por debajo del umbral de un efecto pequeño. Dicho de otra forma: si se toma un fold y una semilla al azar de cada modelo, casi da igual cuál de los tres finalistas se elija. Con cinco folds, el δ calculado solo sobre la realización principal salta en pasos de 0.04, así que el de 15 unidades es la lectura más estable.
 
 #### Tamaño del efecto en el resto de comparaciones {-}
@@ -1269,10 +1100,6 @@ tabla(EF_NEM |>
         group_by(magnitud) |>
         summarise(pares = n(), cliff_min = min(cliff), cliff_max = max(cliff),
                   delta_f1_min = min(delta_f1_medio), delta_f1_max = max(delta_f1_medio)))
-```
-
-```{r mod-124-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-124")
 ```
 
 **Interpretación.** Los 31 pares nominalmente significativos tienen δ de Cliff igual a 1: en los cinco folds, la configuración de mejor rango supera a la otra sin excepción. Todos enfrentan a una configuración con balanceo de Random Forest, XGBoost o logística con una SVM sin balanceo, y la diferencia de F1 va de 0.063 a 0.076. Donde Nemenyi encuentra algo, el efecto no es sutil: son las distancias más extremas del universo de 112 configuraciones. La otra cara es que, con 112 tratamientos y 5 bloques, la prueba es tan conservadora que solo detecta efectos de ese tamaño.
@@ -1305,10 +1132,6 @@ EF_BAL |>
   theme_minimal()
 ```
 
-```{r mod-126-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-126")
-```
-
 **Interpretación.** Cada celda compara las 20 unidades de una técnica (4 optimizadores × 5 folds) con las 20 sin balanceo de la misma familia. El balanceo tiene efecto grande en Random Forest, XGBoost, SVM y logística con las tres técnicas (δ entre 0.86 y 1.0, $d_z$ entre 1.2 y 5.0): en esas familias corregir el desbalance no es un ajuste fino, cambia el resultado. En KNN solo SMOTE alcanza un efecto grande (δ = 0.68) y ADASYN es despreciable; en el árbol los efectos son pequeños o medianos. GaussianNB es la excepción: SMOTE no cambia nada (δ = −0.07) y ADASYN y la ponderación lo empeoran con efecto pequeño a mediano. Tiene sentido, porque GaussianNB ya incorpora la prevalencia en sus probabilidades a priori, e interpolar la clase minoritaria distorsiona las varianzas por clase que estima.
 
 ```{r mod-128}
@@ -1323,10 +1146,6 @@ EF_OPT <- expand_grid(evaluaciones = c(8, 24), opt = c("random", "bayesian_tpe",
   }) |>
   mutate(magnitud_cliff = magnitud_cliff(cliff_no_pareado))
 tabla(EF_OPT, decimales = 3)
-```
-
-```{r mod-128-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-128")
 ```
 
 **Interpretación.** Aquí la elección del tamaño del efecto cambia la historia, y por eso se muestran los dos. Visto como distribuciones sin emparejar, el δ de Cliff de TPE, Random y Genético frente a Grid es despreciable tanto a 8 como a 24 evaluaciones (|δ| ≤ 0.07): los F1 internos de todas las búsquedas se solapan casi por completo, porque la variación entre familias y folds es mucho mayor que la que introduce el optimizador. Emparejando cada búsqueda con la de Grid en la misma familia, balanceo, semilla y fold, a 8 evaluaciones aparece una ventaja pequeña pero consistente ($d_z$ entre 0.41 y 0.47, biserial entre 0.32 y 0.41): con poco presupuesto, cualquier método que muestree el espacio encuentra antes un buen candidato que el orden fijo de la malla. A 24 evaluaciones la diferencia media cae por debajo de 0.0004 y los efectos pareados quedan mezclados ($d_z$ entre −0.20 y 0.25); TPE queda por encima de Grid en la mayoría de las búsquedas que no empatan, pero por diferencias del orden de $10^{-4}$. La ventaja de los optimizadores es real pero modesta, y vive en el régimen de presupuesto bajo.
@@ -1348,10 +1167,6 @@ filas <- map_dfr(finalistas, function(spec) {
 tabla(filas)
 ```
 
-```{r mod-131-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-131")
-```
-
 **Interpretación.** Estos parámetros pertenecen al ajuste final sobre desarrollo completo, no a una selección retrospectiva por el test. Su F1 de selección sigue siendo interno y no reemplaza el resultado externo medio. La búsqueda adicional no modifica ninguno de los resultados oficiales conservados.
 
 ```{r mod-133}
@@ -1360,10 +1175,6 @@ METRICAS_TEST <- imap_dfr(PRED_TEST, function(pred, eid) {
   as_tibble(c(list(experiment_id = eid), metricas_predicciones(pred$y_true, pred$y_pred, pred$score, pred$probability)))
 })
 tabla(select(METRICAS_TEST, experiment_id, all_of(METRICAS)))
-```
-
-```{r mod-133-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-133")
 ```
 
 **Interpretación.** En el test histórico, XGBoost obtuvo F1=0,6370, RF=0,6271 y Logística=0,6246; RF tuvo AUC=0,84384, frente a 0,84212 y 0,84247. El orden de F1 difiere del máximo externo de desarrollo y no se usa para seleccionar otro ganador. Logística detecta más abandonos (Recall≈0,7941), con menor Precision (≈0,5147). El test ya estaba expuesto: estos resultados son suplementarios, no confirmación externa nueva.
@@ -1430,18 +1241,10 @@ stopifnot(isTRUE(all.equal(as.matrix(select(DELONG, delta_auc, z, p_raw, p_holm)
 tabla(select(DELONG, a, b, delta_auc, z, p_raw, p_holm, auc_bootstrap_low, auc_bootstrap_high))
 ```
 
-```{r mod-137-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-137")
-```
-
 **Interpretación.** Los tres p ajustados son 1,0 y los IC de diferencia AUC incluyen cero. No se detectan diferencias con este procedimiento; no se prueba equivalencia. Para RF–XGBoost, ΔAUC≈0,00171 e IC bootstrap≈[−0,00337; 0,00695] muestran que el cambio observado es pequeño e incierto. Holm controla la familia dirigida bajo sus supuestos, pero no corrige la exposición histórica del test ni la selección previa entre configuraciones.
 
 ```{r mod-139}
 tabla(select(DELONG, a, b, delta_f1, f1_bootstrap_low, f1_bootstrap_high, delta_recall, recall_bootstrap_low, recall_bootstrap_high))
-```
-
-```{r mod-139-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-139")
 ```
 
 **Interpretación.** RF–XGBoost tiene ΔF1≈−0,00983 con IC que incluye cero y ΔRecall≈−0,02941, cuyo IC condicional es negativo. Esto describe un intercambio de detección para modelos fijos; no constituye un contraste simultáneo confirmatorio sobre todas las métricas. Se muestran también efectos desfavorables, sin transformar significancia nominal o ausencia de rechazo en superioridad práctica.
@@ -1477,10 +1280,6 @@ intervalos <- expand_grid(j = seq_along(names_), q = 1:3) |>
 tabla(intervalos)
 ```
 
-```{r mod-142-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-142")
-```
-
 **Interpretación.** Los intervalos cuantifican variación por remuestrear clientes del test manteniendo fijos los modelos. Sus anchuras recuerdan la incertidumbre que no muestran los valores puntuales; no incorporan variabilidad de selección o reentrenamiento. La asimetría observada respalda usar percentiles para este estimando, sin afirmar cobertura incondicional de todo el procedimiento experimental.
 
 ### 3.2 Interpretabilidad global y local: SHAP y LIME {-}
@@ -1514,7 +1313,8 @@ datos_explicacion <- function(eid) {
   folder <- file.path(ANALISIS, "finalistas", eid)
   registro <- fromJSON(file.path(folder, "complete.json"))
   stopifnot(digest(file = file.path(folder, "pipeline.pkl"), algo = "sha256") == registro$pipeline_hash)
-  pipeline <- py_with(import_builtins()$open(file.path(folder, "pipeline.pkl"), "rb"), function(f) cloudpickle$load(f))
+  archivo <- import_builtins()$open(file.path(folder, "pipeline.pkl"), "rb")
+  pipeline <- cloudpickle$load(archivo); archivo$close()
   saved <- np$load(file.path(ANALISIS, "interpretabilidad", eid, "shap_global.npz"))
   raw <- read_csv(file.path(ROOT, "WA_Fn-UseC_-Telco-Customer-Churn.csv"), show_col_types = FALSE,
                   col_types = cols(.default = col_character(), SeniorCitizen = col_integer(),
@@ -1592,10 +1392,6 @@ grafico_lime <- function(eid, row_id) {
 grafico_shap_global("random_forest__smote__bayesian_tpe")
 ```
 
-```{r mod-147-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-147")
-```
-
 **Interpretación.** Las mayores importancias medias absolutas agrupadas corresponden a Contract (0.0771), InternetService (0.0694), tenure (0.0675). El resumen muestra variación y signo por cliente; una importancia absoluta alta no determina por sí sola dirección causal. El error máximo de aditividad fue 1.36e-08, inferior a 10⁻⁵ en las 5.634 observaciones. Estas explicaciones caracterizan el modelo final ajustado, no una medida de generalización adicional.
 
 Caso 4267: acierto de alta confianza. Clase observada=0; probabilidad nativa de abandono=0.0081. El identificador permite rastrear la observación sin volver a escoger un ejemplo.
@@ -1604,18 +1400,10 @@ Caso 4267: acierto de alta confianza. Clase observada=0; probabilidad nativa de 
 grafico_shap_local("random_forest__smote__bayesian_tpe", 4267)
 ```
 
-```{r mod-150-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-150")
-```
-
 Interpretación SHAP. Las dos contribuciones negativas de mayor magnitud son cat__Contract_Two year (-0.1402), num__tenure (-0.0845); reducen la probabilidad respecto del fondo. La etiqueta predicha de permanencia coincide con lo observado. El caso ilustra una decisión correcta, sin implicar que esas variables garanticen permanencia.
 
 ```{r mod-152}
 grafico_lime("random_forest__smote__bayesian_tpe", 4267)
-```
-
-```{r mod-152-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-152")
 ```
 
 Interpretación LIME. La figura corresponde a semilla 42; el sustituto local aproxima 0.0867 frente a la probabilidad real 0.0081, con R² ponderado=0.3992. Entre tres semillas, R² varió de 0.3992 a 0.4090; el Jaccard medio del top 5 fue 0.778 y el error absoluto local máximo 0.0920. La estabilidad de variables no garantiza fidelidad de probabilidad. LIME describe una aproximación local, mientras SHAP conserva aditividad; no se exige que sus pesos coincidan.
@@ -1626,18 +1414,10 @@ Caso 4386: error de alta confianza. Clase observada=1; probabilidad nativa de ab
 grafico_shap_local("random_forest__smote__bayesian_tpe", 4386)
 ```
 
-```{r mod-155-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-155")
-```
-
 Interpretación SHAP. Las dos contribuciones negativas de mayor magnitud son cat__Contract_Two year (-0.1130), num__tenure (-0.0626); reducen la probabilidad respecto del fondo. El cliente abandonó pese a recibir una probabilidad baja: es un falso negativo relevante para retención. Las atribuciones explican cómo se produjo la decisión equivocada; no justifican su corrección ni revelan por qué abandonó el cliente.
 
 ```{r mod-157}
 grafico_lime("random_forest__smote__bayesian_tpe", 4386)
-```
-
-```{r mod-157-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-157")
 ```
 
 Interpretación LIME. La figura corresponde a semilla 42; el sustituto local aproxima 0.0058 frente a la probabilidad real 0.0153, con R² ponderado=0.3384. Entre tres semillas, R² varió de 0.3329 a 0.3384; el Jaccard medio del top 5 fue 0.778 y el error absoluto local máximo 0.0140. La estabilidad de variables no garantiza fidelidad de probabilidad. LIME describe una aproximación local, mientras SHAP conserva aditividad; no se exige que sus pesos coincidan.
@@ -1650,10 +1430,6 @@ Las contribuciones se expresan en unidades de probabilidad respecto del fondo. E
 grafico_shap_global("xgboost__smote__random")
 ```
 
-```{r mod-160-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-160")
-```
-
 **Interpretación.** Las mayores importancias medias absolutas agrupadas corresponden a Contract (0.1051), tenure (0.0927), InternetService (0.0733). El resumen muestra variación y signo por cliente; una importancia absoluta alta no determina por sí sola dirección causal. El error máximo de aditividad fue 1.75e-07, inferior a 10⁻⁵ en las 5.634 observaciones. Estas explicaciones caracterizan el modelo final ajustado, no una medida de generalización adicional.
 
 Caso 2221: acierto de alta confianza. Clase observada=0; probabilidad nativa de abandono=0.0116. El identificador permite rastrear la observación sin volver a escoger un ejemplo.
@@ -1662,18 +1438,10 @@ Caso 2221: acierto de alta confianza. Clase observada=0; probabilidad nativa de 
 grafico_shap_local("xgboost__smote__random", 2221)
 ```
 
-```{r mod-163-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-163")
-```
-
 Interpretación SHAP. Las dos contribuciones negativas de mayor magnitud son cat__Contract_Two year (-0.1234), num__tenure (-0.1019); reducen la probabilidad respecto del fondo. La etiqueta predicha de permanencia coincide con lo observado. El caso ilustra una decisión correcta, sin implicar que esas variables garanticen permanencia.
 
 ```{r mod-165}
 grafico_lime("xgboost__smote__random", 2221)
-```
-
-```{r mod-165-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-165")
 ```
 
 Interpretación LIME. La figura corresponde a semilla 42; el sustituto local aproxima -0.1815 frente a la probabilidad real 0.0116, con R² ponderado=0.4424. Entre tres semillas, R² varió de 0.4406 a 0.4474; el Jaccard medio del top 5 fue 1.000 y el error absoluto local máximo 0.2180. La estabilidad de variables no garantiza fidelidad de probabilidad. LIME describe una aproximación local, mientras SHAP conserva aditividad; no se exige que sus pesos coincidan.
@@ -1684,18 +1452,10 @@ Caso 4513: error de alta confianza. Clase observada=1; probabilidad nativa de ab
 grafico_shap_local("xgboost__smote__random", 4513)
 ```
 
-```{r mod-168-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-168")
-```
-
 Interpretación SHAP. Las dos contribuciones negativas de mayor magnitud son cat__Contract_Two year (-0.1392), num__tenure (-0.1109); reducen la probabilidad respecto del fondo. El cliente abandonó pese a recibir una probabilidad baja: es un falso negativo relevante para retención. Las atribuciones explican cómo se produjo la decisión equivocada; no justifican su corrección ni revelan por qué abandonó el cliente.
 
 ```{r mod-170}
 grafico_lime("xgboost__smote__random", 4513)
-```
-
-```{r mod-170-salida, echo=FALSE, eval=TRUE}
-salida("mod/mod-170")
 ```
 
 Interpretación LIME. La figura corresponde a semilla 42; el sustituto local aproxima -0.1141 frente a la probabilidad real 0.0179, con R² ponderado=0.4509. Entre tres semillas, R² varió de 0.4509 a 0.4577; el Jaccard medio del top 5 fue 0.778 y el error absoluto local máximo 0.1456. La estabilidad de variables no garantiza fidelidad de probabilidad. LIME describe una aproximación local, mientras SHAP conserva aditividad; no se exige que sus pesos coincidan.

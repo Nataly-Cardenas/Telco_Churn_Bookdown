@@ -111,10 +111,6 @@ mostrar <- function(fig, titulo, altura = 380) {
 holm <- function(pvalues) p.adjust(pvalues, method = "holm")
 ```
 
-```{r eda-006-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-006")
-```
-
 #### Cargar datos {-}
 
 ```{r eda-008}
@@ -138,20 +134,12 @@ dimensiones_originales <- dim(df)
 tabla(head(df, 5), "Primeras cinco filas · verificación de lectura")
 ```
 
-```{r eda-010-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-010")
-```
-
 Las primeras filas contienen un identificador de cliente, características personales y de los servicios, cargos y la etiqueta `Churn`. Aparecen tanto `Yes` como `No` en el objetivo y categorías como `No phone service`, distintas de una celda vacía. Esta vista sirve para reconocer el formato de los registros; no permite estimar la distribución del conjunto completo.
 
 #### Últimas 5 filas {-}
 
 ```{r eda-013}
 tabla(tail(df, 5), "Últimas cinco filas · verificación de lectura")
-```
-
-```{r eda-013-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-013")
 ```
 
 Las últimas filas muestran registros con distintas antigüedades, cargos y modalidades de contrato, conservando las mismas columnas. También contienen ambas etiquetas de `Churn`. Son ejemplos de lectura del archivo, no una muestra que permita generalizar qué características predominan.
@@ -161,10 +149,6 @@ Las últimas filas muestran registros con distintas antigüedades, cargos y moda
 ```{r eda-016}
 tabla(tibble(Filas = nrow(df), Columnas = ncol(df), Identificador = "customerID", Objetivo = TARGET),
       "Estructura original")
-```
-
-```{r eda-016-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-016")
 ```
 
 El archivo contiene 7043 filas y 21 columnas. `customerID` identifica a cada cliente y `Churn` es la variable objetivo. Las dimensiones incluyen ambos campos, por lo que el total de columnas no equivale al número de predictores.
@@ -188,10 +172,6 @@ train_ids <- df$customerID[df$.indice %in% idx_train]
 train_df <- mutate(X_train, !!TARGET := y_train)
 tabla(tibble(Conjunto = c("Train", "Test"), Filas = c(nrow(X_train), nrow(X_test)),
              `Fracción planificada` = c("80%", "20%")), "Partición")
-```
-
-```{r eda-019-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-019")
 ```
 
 El conjunto de entrenamiento contiene 5634 filas, correspondientes a la fracción del 80%, mientras que test conserva 1409 filas, con una fracción del 20%. Esta distribución deja la mayor parte de los registros para explorar y desarrollar el modelo, y una parte separada para evaluarlo al final.
@@ -221,10 +201,6 @@ if (file.exists(IDX_TRAIN) && file.exists(IDX_TEST)) {
 }
 ```
 
-```{r eda-023-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-023")
-```
-
 ### 2.1 Revisión de train y corrección de tipo {-}
 
 Se inspecciona por qué TotalCharges se leyó como texto. Un blanco no prueba que el cargo sea cero. Convertirlo a NaN corrige su representación para explorar; no es imputación.
@@ -236,10 +212,6 @@ no_convertibles <- !is.na(tc_original) & is.na(tc_convertida)
 tabla(tibble(`Texto original (repr)` = sprintf("'%s'", tc_original[no_convertibles])) |>
         count(`Texto original (repr)`, name = "Frecuencia", sort = TRUE),
       "Textos no convertibles en TotalCharges · train")
-```
-
-```{r eda-025-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-025")
 ```
 
 Los 8 registros no convertibles contienen un espacio (`' '`) en lugar de un importe. Esto explica por qué la columna requiere una revisión de tipo: el espacio representa ausencia de información numérica, pero no permite concluir que el cargo sea cero.
@@ -261,10 +233,6 @@ tabla(tibble(`#` = seq_along(train_df) - 1, Column = names(train_df),
       "train_df.info() · columnas, no nulos y tipo")
 ```
 
-```{r eda-028-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-028")
-```
-
 #### Resumen {-}
 
 ```{r eda-030}
@@ -276,10 +244,6 @@ tabla(tibble(Variable = names(train_df), `Tipo almacenado` = map_chr(train_df, ~
       "Esquema analítico · train")
 ```
 
-```{r eda-030-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-030")
-```
-
  `tenure`, `MonthlyCharges` y `TotalCharges` se clasifican como numéricas; los demás predictores son categóricos. `SeniorCitizen` está almacenada como entero, pero tiene 2 valores distintos y se analiza como categoría. `PaymentMethod` presenta 4 categorías, mientras que los demás predictores categóricos tienen 2 o 3. Solo `TotalCharges` registra nulos: 8. La distinción entre tipo almacenado y papel analítico será relevante al preparar los datos para los modelos.
 
 #### Duplicados {-}
@@ -289,10 +253,6 @@ duplicados <- sum(duplicated(select(train_df, -.indice)))
 tabla(tibble(Comprobación = c("IDs repetidos en train", "Perfiles repetidos (sin ID, con Churn)"),
              Cantidad = c(sum(duplicated(train_ids)), duplicados)),
       "Identidad y perfiles coincidentes")
-```
-
-```{r eda-033-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-033")
 ```
 
 No se registran IDs repetidos en train, pero sí 15 perfiles coincidentes cuando se omite el identificador y se incluye `Churn`. La coincidencia de atributos entre clientes con identificadores diferentes no demuestra que sean registros duplicados del mismo cliente; por sí sola, esta tabla no justifica eliminarlos. La coincidencia de perfiles entre `train` y `test` se cuantifica aparte, como diagnóstico de independencia y sin usarla para decidir tratamientos, en la sección 3 del notebook de preprocesamiento.
@@ -310,10 +270,6 @@ target_resumen <- tibble(Churn = names(conteo), Clientes = as.integer(conteo),
 tabla(target_resumen, "Distribución de Churn · train")
 ```
 
-```{r eda-037-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-037")
-```
-
 En train, 4139 clientes permanecen (`No`), equivalentes al 73.46%, y 1495 abandonan (`Yes`), que representan el 26.54%. La clase de abandono es minoritaria. Este desbalance hace necesario evaluar la detección de `Yes` por separado, porque una medida global puede quedar dominada por los clientes que permanecen.
 
 ```{r eda-039}
@@ -322,10 +278,6 @@ fig <- plot_ly(target_resumen, x = ~Churn, y = ~Clientes, color = ~Churn, colors
                text = ~sprintf("%d · %.2f%%", Clientes, `Porcentaje (%)`)) |>
   layout(yaxis = list(range = c(0, max(conteo) * 1.16)))
 mostrar(fig, "Clientes que permanecen y abandonan")
-```
-
-```{r eda-039-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-039")
 ```
 
 Se visualizan los datos de la tabla anterior, la barra de `No` es claramente más alta que la de `Yes`: predominan los clientes que permanecen. La diferencia de alturas hace visible el desbalance de la variable objetivo, sin que el grupo de abandono desaparezca o resulte residual.
@@ -349,10 +301,6 @@ resumen_num <- map_dfr(num_vars, function(v) {
          `Nulos (%)` = Nulos / nrow(train_df) * 100,
          Asimetría = map_dbl(Variable, ~ asimetria(train_df[[.x]])))
 tabla(resumen_num, "Estadísticas numéricas completas · train")
-```
-
-```{r eda-043-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-043")
 ```
 
 `tenure` tiene 5634 observaciones válidas, con media de 32.49 meses y DS de 24.57 meses. La mediana es 29.00 meses y los valores van de 0.00 a 72.00 meses. El intervalo entre Q1 = 9.00 y Q3 = 55.00 abarca la mitad central de la distribución, con un IQR de 46.00 meses, lo que refleja una amplia diversidad de antigüedades. La media supera ligeramente a la mediana y la asimetría es 0.24. 
@@ -419,10 +367,6 @@ fig <- subplot(histograma, caja, widths = c(0.7, 0.3), titleX = TRUE, titleY = T
 mostrar(fig, paste(var, "· histograma y boxplot"))
 ```
 
-```{r eda-046-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-046")
-```
-
 ### 3.3 Variables categóricas {-}
 
 Se analiza cada predictor categórico, incluido SeniorCitizen. customerID se auditó como identificador. Se reportan frecuencias, porcentajes, cardinalidad, nulos y categorías <1%, sin agrupar.
@@ -441,10 +385,6 @@ resumen_cat <- map_dfr(cat_vars, function(v) {
          `Variantes potencialmente equivalentes` = n_distinct(textos) - n_distinct(normalizados))
 })
 tabla(resumen_cat, "Calidad y cardinalidad de categorías · train")
-```
-
-```{r eda-049-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-049")
 ```
 
 Los predictores categóricos tienen entre 2 y 4 categorías. Todos registran 0 nulos, 0 categorías bajo el umbral de rareza indicado y 0 casos detectados de espacios externos o variantes potencialmente equivalentes. `PaymentMethod` es la variable con más categorías. Estas comprobaciones no muestran necesidad de agrupar por escasez ni de corregir esos patrones de escritura, aunque no descartan otros problemas de significado.
@@ -679,10 +619,6 @@ f <- train_df |>
 tabla(f, paste(c, "· frecuencias"))
 ```
 
-```{r eda-051-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-051")
-```
-
 #### Gráficos {-}
 
 ```{r eda-053}
@@ -716,10 +652,6 @@ fig <- subplot(paneles, nrows = n_rows, margin = c(0.04, 0.04, if (n_rows <= 2) 
 mostrar(fig, "Distribución de todas las variables categóricas (train)", altura = 280 * n_rows)
 ```
 
-```{r eda-053-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-053")
-```
-
 ### 3.4 Outliers y sesgos {-}
 Los límites son Q1 − 1.5 × IQR y Q3 + 1.5 × IQR, calculados en train. Los boxplots de 3.2 muestran los extremos sin repetir figuras. Un punto fuera del intervalo es una alerta estadística, no necesariamente un error. No se elimina ni recorta.
 
@@ -735,10 +667,6 @@ outliers <- map_dfr(num_vars, function(c) {
          `% observado` = 100 * cantidad / length(s), Asimetría = asimetria(s))
 })
 tabla(outliers, "Límites IQR y asimetría · train")
-```
-
-```{r eda-055-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-055")
 ```
 
 Las tres variables presentan 0 posibles outliers según sus límites IQR globales. Para `tenure`, los límites son -60.00 y 124.00; para `MonthlyCharges`, -45.84 y 171.51; y para `TotalCharges`, -4,739.73 y 8,985.62. Los límites negativos son resultados de la regla estadística, no valores negativos observados. La ausencia de alertas con este criterio no demuestra que todos los registros sean correctos.
@@ -862,10 +790,6 @@ mostrar(fig, paste(c, "· comparación por clase"))
 tabla(filter(pruebas_num, Variable == "TotalCharges"), "TotalCharges · prueba estadística", decimales = 4)
 ```
 
-```{r eda-064-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-064")
-```
-
 #### Asociación punto-biserial {-}
 La correlación punto-biserial resume dirección e intensidad de la relación entre cada variable numérica y `Churn` codificado como Yes = 1. Relaciona predictores con el objetivo, no entre sí.
 
@@ -875,10 +799,6 @@ ranking_num <- pruebas_num |>
   mutate(`|r|` = abs(`r punto-biserial`)) |>
   arrange(desc(`|r|`))
 tabla(ranking_num, "Asociación numérica con Churn · mayor a menor |r|", decimales = 4)
-```
-
-```{r eda-066-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-066")
 ```
 
 `tenure` muestra la mayor asociación numérica marginal con el objetivo, con r = -0.3456. `MonthlyCharges` tiene una relación positiva de 0.1980 y `TotalCharges`, una negativa de -0.1948, de magnitudes cercanas entre sí. Las dos primeras usan 5634 observaciones y la última, 5626. Los signos describen la dirección de la asociación con abandono; el orden por magnitud no sustituye una comparación predictiva con varias características a la vez.
@@ -1316,10 +1236,6 @@ chi_tabla <- r |>
 tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
 ```
 
-```{r eda-070-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-070")
-```
-
 #### Control de comparaciones múltiples {-}
 Este resumen mantiene los resultados originales y ajustados de la misma familia de 19 contrastes. La columna de decisión utiliza Holm; no añade nuevas pruebas ni sustituye las tablas individuales de Chi-cuadrado.
 
@@ -1328,10 +1244,6 @@ control_holm <- familia_p |>
   rename(`p original` = p) |>
   mutate(`Rechazar H0 (Holm)` = `p Holm` < ALPHA)
 tabla(control_holm, "Decisiones con corrección de Holm", decimales = 4)
-```
-
-```{r eda-072-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-072")
 ```
 
 Interpretación: Tras corregir las comparaciones con Holm, no se rechaza H0 para `gender`, `PhoneService`. Para las demás variables se mantiene evidencia de diferencia o asociación según su contraste. La corrección evita interpretar cada prueba como si fuera la única realizada; el rechazo de H0 no establece que una variable aporte una mejora predictiva importante.
@@ -1352,10 +1264,6 @@ tasas_categoria <- imap_dfr(contingencias, function(ct, c) {
 tabla(tasas_categoria, "Tasas de churn dentro de cada categoría")
 ```
 
-```{r eda-075-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-075")
-```
-
 Interpretación: Cada tasa utiliza el total de su propia categoría como denominador. Por ejemplo, en `Contract = Month-to-month` hay 1326 abandonos de 3102 clientes (42.75%); en `Contract = One year` hay 130 abandonos de 1173 clientes (11.08%); en `Contract = Two year` hay 39 abandonos de 1359 clientes (2.87%). La diferencia de tasas no se explica únicamente por que los grupos tengan distinto tamaño. La marca de mayor tasa compara categorías dentro de cada variable; no garantiza utilidad predictiva ni autoriza sumar los mismos clientes entre variables.
 
 ```{r eda-077}
@@ -1364,10 +1272,6 @@ mayores_tasas <- tasas_categoria |>
   arrange(desc(`Tasa churn (%)`))
 tabla(select(mayores_tasas, Variable, Categoría, Yes, `Total categoría`, `Tasa churn (%)`),
       "Mayor tasa de churn por variable")
-```
-
-```{r eda-077-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-077")
 ```
 
 Interpretación: Las tasas más altas del resumen son `PaymentMethod = Electronic check`: 45.74% (865 de 1891 clientes); `Contract = Month-to-month`: 42.75% (1326 de 3102 clientes); `InternetService = Fiber optic`: 42.09% (1045 de 2483 clientes); `OnlineSecurity = No`: 41.94% (1173 de 2797 clientes); `TechSupport = No`: 41.75% (1157 de 2771 clientes); `SeniorCitizen = 1`: 41.09% (378 de 920 clientes). Estas categorías merecen evaluación posterior junto con el resto de características. Ser la categoría de mayor tasa dentro de una variable no demuestra una asociación fuerte: el tamaño del contraste con las otras categorías y la validación del modelo siguen siendo necesarios.
@@ -1386,10 +1290,29 @@ Regla: si todas las variables pasan la prueba (p Holm ≥ α) se usa Pearson; si
 
 ```{r eda-081}
 # Prueba K² de D'Agostino–Pearson (equivalente a scipy.stats.normaltest).
+# Se implementan skewtest y kurtosistest con las mismas fórmulas de SciPy.
 dagostino_k2 <- function(x) {
   n <- length(x)
-  z_asim <- moments::agostino.test(x)$statistic[["z"]]
-  z_curt <- moments::anscombe.test(x)$statistic[["z"]]
+  m2 <- mean((x - mean(x))^2)
+  g1 <- mean((x - mean(x))^3) / m2^1.5
+  b2 <- mean((x - mean(x))^4) / m2^2
+  # Asimetría (skewtest)
+  y <- g1 * sqrt((n + 1) * (n + 3) / (6 * (n - 2)))
+  beta2 <- 3 * (n^2 + 27 * n - 70) * (n + 1) * (n + 3) / ((n - 2) * (n + 5) * (n + 7) * (n + 9))
+  w2 <- -1 + sqrt(2 * (beta2 - 1))
+  delta <- 1 / sqrt(0.5 * log(w2))
+  alfa <- sqrt(2 / (w2 - 1))
+  if (y == 0) y <- 1
+  z_asim <- delta * log(y / alfa + sqrt((y / alfa)^2 + 1))
+  # Curtosis (kurtosistest)
+  e_b2 <- 3 * (n - 1) / (n + 1)
+  var_b2 <- 24 * n * (n - 2) * (n - 3) / ((n + 1)^2 * (n + 3) * (n + 5))
+  z <- (b2 - e_b2) / sqrt(var_b2)
+  raiz_beta1 <- 6 * (n^2 - 5 * n + 2) / ((n + 7) * (n + 9)) * sqrt(6 * (n + 3) * (n + 5) / (n * (n - 2) * (n - 3)))
+  a <- 6 + 8 / raiz_beta1 * (2 / raiz_beta1 + sqrt(1 + 4 / raiz_beta1^2))
+  denom <- 1 + z * sqrt(2 / (a - 4))
+  termino2 <- sign(denom) * ((1 - 2 / a) / abs(denom))^(1 / 3)
+  z_curt <- ((1 - 2 / (9 * a)) - termino2) / sqrt(2 / (9 * a))
   k2 <- z_asim^2 + z_curt^2
   list(statistic = k2, p.value = pchisq(k2, df = 2, lower.tail = FALSE))
 }
@@ -1415,10 +1338,6 @@ tabla(tibble(Criterio = c("Variables que pasan la normalidad", "Coeficiente de c
       "Decisión del método de correlación")
 ```
 
-```{r eda-081-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-081")
-```
-
 ```{r eda-082}
 paneles <- map(num_vars, function(c) {
   qq <- qqnorm(na.omit(train_df[[c]]), plot.it = FALSE)
@@ -1437,10 +1356,6 @@ fig <- subplot(paneles, nrows = 1, margin = 0.04, titleX = TRUE, titleY = TRUE) 
 mostrar(fig, "Gráficos Q-Q · la línea roja es la normal esperada", altura = 400)
 ```
 
-```{r eda-082-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-082")
-```
-
 Interpretación: ninguna de las tres variables pasa la prueba de normalidad (p Holm ≈ 0 en todas; el mayor es 3.86e-139). Los Q-Q lo confirman con desvíos sistemáticos de la línea roja, no marginales: `tenure` (asimetría 0.24, curtosis −1.39) y `MonthlyCharges` (−0.22, −1.26) tienen colas ligeras y más de una zona de concentración, y `TotalCharges` presenta asimetría positiva (0.95). Como no se cumple el supuesto para Pearson, la matriz usa Spearman, que trabaja con rangos, mide asociación monótona, no exige normalidad y es robusta a la asimetría y a los valores extremos; los empates de `tenure`, que es discreta, se manejan con rangos promedio. Pearson se conserva solo como referencia comparativa en la tabla de pares.
 
 #### Matriz de correlaciones de Spearman {-}
@@ -1451,10 +1366,6 @@ corr_pearson <- cor(train_df[num_vars], method = "pearson", use = "pairwise.comp
 corr_spearman <- cor(train_df[num_vars], method = "spearman", use = "pairwise.complete.obs")
 corr <- cor(train_df[num_vars], method = metodo_corr, use = "pairwise.complete.obs")          # coeficiente decidido por la prueba de normalidad
 tabla(as_tibble(corr, rownames = "Variable"), paste("Matriz de", nombre_corr, "· predictores numéricos"), decimales = 4)
-```
-
-```{r eda-085-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-085")
 ```
 
 La relación más alta entre variables distintas corresponde a `tenure` y `TotalCharges` (ρ = 0.8914). La de `MonthlyCharges` con `TotalCharges` es 0.6420, y la de `tenure` con `MonthlyCharges`, 0.2842. Todas son positivas: los cargos acumulados comparten información tanto con la antigüedad como con el cargo mensual. La matriz describe relaciones monótonas; no demuestra que una variable sea prescindible.
@@ -1468,10 +1379,6 @@ fig <- plot_ly(x = colnames(corr), y = rownames(corr), z = corr, type = "heatmap
                text = formatC(corr, format = "f", digits = 3), texttemplate = "%{text}") |>
   layout(yaxis = list(autorange = "reversed"))
 mostrar(fig, paste("Correlación de", nombre_corr, "· numéricas"), altura = 420)
-```
-
-```{r eda-088-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-088")
 ```
 
 Fuera de la diagonal, el color más intenso corresponde a `tenure` con `TotalCharges`, seguido de `MonthlyCharges` con `TotalCharges`. El cruce de `tenure` con `MonthlyCharges` es más claro. Los tonos muestran relaciones positivas de distinta intensidad; la diagonal representa cada variable consigo misma y no una asociación entre predictores distintos.
@@ -1496,10 +1403,6 @@ texto_altas <- if (nrow(altas) == 0) "ninguno" else
                 altas[[paste(nombre_corr, simbolo_corr, "(usado)")]]), collapse = "; ")
 ```
 
-```{r eda-090-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-090")
-```
-
 La relación entre `tenure` y `TotalCharges` es la más alta: ρ = 0.8914 con 5626 observaciones (Pearson daba r = 0.8294), y es la única marcada por el criterio de correlación elevada. `MonthlyCharges` y `TotalCharges` presentan ρ = 0.6420 (Pearson, r = 0.6540), también con 5626 observaciones; `tenure` y `MonthlyCharges` tienen ρ = 0.2842 (Pearson, r = 0.2567) con 5634. La conclusión no cambia con el coeficiente: solo `tenure`–`TotalCharges` supera 0.7. Esa relación alta entre antigüedad y cargos acumulados aconseja revisar la estabilidad de los coeficientes al modelar, pero no basta para eliminar una variable.
 
 #### Asociación entre variables categóricas {-}
@@ -1521,10 +1424,6 @@ asociaciones_cat <- map_dfr(pares_cat, function(par) {
 tabla(asociaciones_cat, "Pares categóricos seleccionados · train", decimales = 4)
 ```
 
-```{r eda-093-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-093")
-```
-
 `PhoneService` y `MultipleLines` alcanzan V de Cramer = 1.0000, indicando una dependencia muy fuerte entre esas categorías. `InternetService` también presenta asociaciones elevadas con `OnlineSecurity` (0.7252) y `TechSupport` (0.7232). Estos resultados aconsejan revisar la información compartida entre variables de servicios antes de interpretar sus efectos por separado.
 
 La asociación de `Partner` con `Dependents` es menor (V = 0.4463), y la de `Contract` con `PaperlessBilling` es la más baja de estos pares (V = 0.1716). Todos los contrastes mantienen evidencia de asociación tras el ajuste de Holm y no presentan frecuencias esperadas insuficientes bajo el criterio registrado. Los valores «≈0 (límite numérico)» expresan una limitación de precisión del cálculo, no probabilidades exactamente nulas. V mide intensidad, no dirección ni causalidad.
@@ -1541,10 +1440,6 @@ consistencia <- map_dfr(servicios, function(c) {
   bind_rows(tibble(Regla = "PhoneService=No ↔ MultipleLines=No phone service",
                    Discrepancias = sum((train_df$PhoneService == "No") != (train_df$MultipleLines == "No phone service"))))
 tabla(consistencia, "Comprobaciones semánticas de servicios")
-```
-
-```{r eda-096-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-096")
 ```
 
 Interpretación: Todas las reglas registran 0 discrepancias. La ausencia de internet coincide con `No internet service` en las variables de servicios complementarios, y la ausencia de teléfono coincide con `No phone service` en `MultipleLines`. Estas etiquetas representan una condición coherente entre campos; no deben confundirse con respuestas desconocidas. El resultado respalda la consistencia de estas reglas específicas, no de cualquier relación posible entre variables.
@@ -1564,10 +1459,6 @@ fig <- plot_ly(train_df, type = "splom", color = ~.data[[TARGET]], colors = TARG
 mostrar(fig, "Matriz de dispersión · variables numéricas por Churn", altura = 650)
 ```
 
-```{r eda-100-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-100")
-```
-
 Interpretación: La relación entre antigüedad y cargos acumulados forma una nube ascendente con una amplitud que cambia a lo largo del eje. Entre cargos mensuales y acumulados también aparece una tendencia positiva, pero con dispersión amplia. Los colores de las clases se superponen en las comparaciones por pares: las relaciones no son equivalencias exactas ni separan completamente el churn.
 
 ```{r eda-102}
@@ -1583,10 +1474,6 @@ for (clase in c("No", "Yes")) {
 fig <- layout(fig, xaxis = list(title = c), yaxis = list(title = "Densidad estimada"),
               legend = list(title = list(text = "Churn")))
 mostrar(fig, paste(c, "· densidad por clase"), altura = 380)
-```
-
-```{r eda-102-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-102")
 ```
 
 Interpretación: Las curvas de cargos mensuales muestran una mayor concentración relativa de `No` en la zona de cargos bajos y de `Yes` en cargos medios y altos. Existe un amplio solapamiento y más de una zona de concentración; el suavizado no respalda asumir una forma normal simple. La altura representa densidad dentro de cada clase, no cantidad absoluta de clientes.
@@ -1606,10 +1493,6 @@ fig <- layout(fig, xaxis = list(title = c), yaxis = list(title = "Densidad estim
 mostrar(fig, paste(c, "· densidad por clase"), altura = 380)
 ```
 
-```{r eda-104-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-104")
-```
-
 Interpretación: Ambas curvas se concentran en cargos acumulados bajos y se prolongan hacia importes altos. La curva de `Yes` muestra una concentración más marcada cerca del extremo bajo, mientras que `No` está más extendida. El solapamiento impide separar perfectamente las clases. La densidad es una estimación suavizada; su forma cerca del límite no permite deducir importes negativos ni conteos de clientes.
 
 Visualización conjunta conservada. El gráfico existente añade el contrato a la relación entre antigüedad y cargo mensual. Se mantienen código, diseño y registros de train; el solapamiento no permite leer tasas contando puntos.
@@ -1626,10 +1509,6 @@ paneles <- map(contratos, function(k) {
 })
 fig <- subplot(paneles, nrows = 1, shareY = TRUE, titleX = TRUE)
 mostrar(fig, "Antigüedad y cargo mensual por contrato", altura = 410)
-```
-
-```{r eda-107-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-107")
 ```
 
 Interpretación: En el panel de contratos mensuales se aprecia una concentración de puntos naranjas hacia antigüedades bajas. En el de contratos de dos años predominan visualmente los puntos azules, con acumulación hacia antigüedades altas. Los colores se superponen y los cargos abarcan un rango amplio: estas características no separan perfectamente las clases. La superposición de puntos no permite deducir tasas exactas de abandono.
@@ -1652,10 +1531,6 @@ tabla(faltantes, "Valores faltantes por columna · train")
 columnas_faltantes <- faltantes$Variable[faltantes$Nulos > 0]
 ```
 
-```{r eda-110-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-110")
-```
-
 Interpretación: `TotalCharges` es la única columna con valores faltantes: 8 registros, equivalentes al 0.14% de train. Las demás columnas tienen 0 nulos y ninguna activa las alertas de ausencia elevada. Aunque la proporción es pequeña, el tratamiento posterior deberá distinguir un importe desconocido de un importe igual a cero.
 
 #### Patrón de missing values {-}
@@ -1672,10 +1547,6 @@ fig <- plot_ly(x = columnas_faltantes, y = seq_len(nrow(patron)) - 1,
 mostrar(fig, "Patrón de faltantes · train completo", altura = 330)
 ```
 
-```{r eda-113-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-113")
-```
-
 Interpretación: Predomina casi por completo el color asociado a valores observados en `TotalCharges`. La franja correspondiente a ausencias es tan estrecha que no permite distinguir registros individuales a esta escala. La imagen muestra que la ausencia ocupa una parte visualmente pequeña del conjunto, pero no permite contarla con precisión ni interpretar el eje ordenado como tiempo.
 
 #### Concentración en filas y columnas {-}
@@ -1689,10 +1560,6 @@ patrones_filas <- tibble(`Nulos por fila` = nulos_fila) |>
 tabla(patrones_filas, "Concentración de faltantes por fila")
 ```
 
-```{r eda-116-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-116")
-```
-
 Interpretación: Hay 5626 filas sin nulos (99.86%) y 8 con un nulo (0.14%). No aparecen filas con varias ausencias simultáneas. El problema está localizado en pocos registros, por lo que esta tabla no respalda eliminar de forma generalizada filas incompletas.
 
 ```{r eda-118}
@@ -1701,10 +1568,6 @@ tabla(train_df |>
         filter(missing_tc) |>
         transmute(`Índice original` = .indice, tenure, MonthlyCharges, TotalCharges, .data[[TARGET]]),
       "Clientes de train con TotalCharges ausente")
-```
-
-```{r eda-118-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-118")
 ```
 
 Interpretación: Todos los registros listados tienen `tenure` igual a 0 y `Churn` igual a `No`, mientras que `MonthlyCharges` sí contiene importes y varía entre clientes. La coincidencia sitúa los faltantes en registros sin antigüedad acumulada, pero no explica cómo se generaron ni demuestra que el cargo total desconocido deba sustituirse por cero.
@@ -1722,10 +1585,6 @@ tabla(as_tibble(as.data.frame.matrix(ct), rownames = "TotalCharges ausente"),
       paste("Ausencia de TotalCharges vs", nombre))
 ```
 
-```{r eda-121-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-121")
-```
-
 Interpretación: Entre los registros con `TotalCharges` ausente hay 8 clientes con `Churn = No` y 0 con `Yes`. Cuando el importe está observado, los conteos son 4131 y 1495, respectivamente. La ausencia queda concentrada en la clase `No`, pero el grupo con faltantes es muy pequeño: estos conteos, por sí solos, no demuestran una asociación estadística.
 
 ```{r eda-123}
@@ -1738,10 +1597,6 @@ tabla(as_tibble(as.data.frame.matrix(ct), rownames = "TotalCharges ausente"),
       paste("Ausencia de TotalCharges vs", nombre))
 ```
 
-```{r eda-123-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-123")
-```
-
 Interpretación: Los 8 registros con `TotalCharges` ausente pertenecen al grupo `tenure = 0`. Los 5626 registros con importe observado pertenecen al grupo contrario; las combinaciones cruzadas tienen conteo 0. En este train, ambos indicadores coinciden por completo. Esa coincidencia no establece la causa del faltante ni el importe que debería imputarse.
 
 ```{r eda-125}
@@ -1751,10 +1606,6 @@ if (min(dim(ct)) >= 2) {
 pruebas_missing <- bind_rows(pruebas_missing) |>
   mutate(`p Holm` = holm(p))
 tabla(pruebas_missing, "Contrastes de ausencia · train", decimales = 4)
-```
-
-```{r eda-125-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-125")
 ```
 
 Interpretación: Ambas comparaciones presentan frecuencias esperadas pequeñas, por lo que la inferencia reportada utiliza Fisher exacta y conserva χ² solo como descripción. Para `Churn`, p = 0.1196 y p Holm = 0.1196 no aportan evidencia suficiente de asociación con la ausencia; V = 0.0227 es pequeño. Esto no demuestra independencia ni que los faltantes sean completamente aleatorios.
@@ -1770,10 +1621,6 @@ tabla(select(ranking_cat, Variable, `V de Cramer`, `p Holm`),
 top_cat <- ranking_cat |>
   slice_head(n = 3) |>
   with(paste(sprintf("%s (V=%.4f)", Variable, `V de Cramer`), collapse = ", "))
-```
-
-```{r eda-128-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-128")
 ```
 
 Interpretación: `Contract` encabeza las asociaciones marginales con churn (V = 0.4111), seguido de `OnlineSecurity` (0.3510) y `TechSupport` (0.3449). En el extremo inferior están `PhoneService` (0.0179) y `gender` (0.0022), cuyos p ajustados de 0.3568 y 0.8684 no aportan evidencia suficiente de asociación. `MultipleLines` sí mantiene evidencia estadística (p Holm = 0.0124), pero su V de 0.0441 es pequeño. Esta diferencia muestra por qué significancia y fuerza de asociación no deben interpretarse como lo mismo, ni como rendimiento predictivo.
@@ -1807,10 +1654,6 @@ resumen_ejecutivo <- tribble(
 )
 
 tabla(resumen_ejecutivo, "Hallazgos y siguiente etapa")
-```
-
-```{r eda-130-salida, echo=FALSE, eval=TRUE}
-salida("eda/eda-130")
 ```
 
 Interpretación: La síntesis identifica el desbalance del objetivo, los faltantes de `TotalCharges`, su asimetría y la correlación con `tenure` como aspectos que merecen atención en la siguiente etapa. También registra ausencia de alertas IQR globales y de categorías raras, por lo que no aporta una justificación automática para eliminar registros o agrupar categorías. Las recomendaciones son alternativas que deberán contrastarse dentro de train; las asociaciones descritas todavía no prueban una mejora predictiva. Las tasas por categoría se documentan en el análisis bivariado y complementan este resumen; no deben confundirse con los porcentajes dentro de Churn.

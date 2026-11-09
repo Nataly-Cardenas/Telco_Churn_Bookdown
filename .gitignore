@@ -7,3 +7,9 @@ telco-churn.knit.md
 .Rhistory
 .RData
 .Rproj.user/
+# Archivos que genera el código del libro al ejecutarse
+train_test_split.rds
+X_train_processed.csv
+X_test_processed.csv
+y_train.csv
+y_test.csv
