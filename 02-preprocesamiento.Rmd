@@ -1,6 +1,6 @@
 # Preprocesamiento de Datos {#preprocesamiento -}
 
-Objetivo: A partir de los hallazgos del EDA (`EDA.ipynb`), aplicar de forma sistemática los pasos de limpieza, codificación y escalado necesarios para dejar los datos listos para el modelado, evitando *data leakage* entre `train` y `test`.
+Objetivo: A partir de los hallazgos del EDA (capítulo de EDA), aplicar de forma sistemática los pasos de limpieza, codificación y escalado necesarios para dejar los datos listos para el modelado, evitando *data leakage* entre `train` y `test`.
 
 ## 1. Importación de librerías {-}
 
@@ -194,7 +194,7 @@ cat("Categorías únicas (MultipleLines):", unique(X_train$MultipleLines), "\n")
 
 b) `tenure` vs `TotalCharges` (r = 0.83): variable derivada, no eliminación. El EDA dejó esta correlación como un punto a resolver. La decisión más sólida es no borrar ninguna de las dos originales:
 
-- Con Regresión Logística (regularización L2 por defecto en scikit-learn), la multicolinealidad moderada no rompe el modelo: el peso se reparte entre las variables correlacionadas. El problema real de la multicolinealidad aparece al interpretar coeficientes individuales, no al predecir.
+- Con Regresión Logística (con regularización L2), la multicolinealidad moderada no rompe el modelo: el peso se reparte entre las variables correlacionadas. El problema real de la multicolinealidad aparece al interpretar coeficientes individuales, no al predecir.
 - Eliminar una variable "a mano" tira información real: dos clientes con la misma antigüedad pueden tener `TotalCharges` distintos si pagaron planes diferentes esa diferencia es señal, no ruido.
 - Si más adelante se prueban modelos de árboles (Random Forest, Gradient Boosting), la multicolinealidad casi no los afecta, así que optimizar esto solo para el modelo lineal sería trabajo desperdiciado.
 
@@ -258,7 +258,7 @@ preprocessor <- recipe(~ ., data = select(X_train, all_of(c(numeric_features, ca
 
 ### 4.6 Validación cruzada en train (protocolo antes de tocar test) {-}
 
-Antes de ajustar el `ColumnTransformer` sobre todo `train` y evaluar una única vez en `test` (sección 5-7), se fija el protocolo correcto para comparar y elegir modelos: toda comparación se hace por validación cruzada dentro de `train`, envolviendo preprocesamiento + modelo en un mismo `Pipeline` de scikit-learn para que el escalado y el One-Hot Encoding se ajusten dentro de cada fold, no una sola vez sobre todo train. Esto evita el leve leakage dentro-de-train que aparecería si se reutilizaran `X_train_processed`/`X_test_processed` (ya transformados) para hacer CV o `GridSearchCV` más adelante.
+Antes de ajustar el `ColumnTransformer` sobre todo `train` y evaluar una única vez en `test` (sección 5-7), se fija el protocolo correcto para comparar y elegir modelos: toda comparación se hace por validación cruzada dentro de `train`, envolviendo preprocesamiento + modelo en un mismo `workflow` de tidymodels para que el escalado y el One-Hot Encoding se ajusten dentro de cada fold, no una sola vez sobre todo train. Esto evita el leve leakage dentro-de-train que aparecería si se reutilizaran `X_train_processed`/`X_test_processed` (ya transformados) para hacer CV o `GridSearchCV` más adelante.
 
 Se añaden dos controles de sanidad:
 - Etiquetas permutadas: si el AUC-ROC no cae a ~0.5 al permutar aleatoriamente las etiquetas de entrenamiento, algo en el pipeline está filtrando información de la etiqueta real.
@@ -533,7 +533,7 @@ print(as.data.frame(filter(ranking, str_detect(variable, "gender|PhoneService"))
 
 > Corrección respecto a la lectura inicial. Para `gender` (coeficiente 0.032, puesto 21 de 24) la conclusión del EDA se sostiene: aporta muy poco a este modelo. Para `PhoneService` no se sostiene igual de bien: su coeficiente (−0.281) lo ubica en el puesto 15 de 24, por encima —en magnitud— de `Dependents` (−0.229), `SeniorCitizen` (0.154), `Partner` (0.018) y otras variables que sí se consideran informativas. No es de los coeficientes más grandes, pero tampoco es de los más pequeños.
 >
-> Una parte de esa magnitud es probablemente un artefacto de colinealidad, no de aporte real: `PhoneService_Yes` (−0.281) y `MultipleLines_Yes` (+0.297) tienen coeficientes de signo opuesto y magnitud similar, consistente con que ambas codifican información muy relacionada (sin `PhoneService` no puede haber `MultipleLines`). Con regularización L2 y variables correlacionadas, el modelo puede repartir peso entre ellas de forma inestable. El propio notebook ya advierte esto en la sección 4.3.c, pero la lectura inicial no lo aplicó de forma consistente a `PhoneService`.
+> Una parte de esa magnitud es probablemente un artefacto de colinealidad, no de aporte real: `PhoneService_Yes` (−0.281) y `MultipleLines_Yes` (+0.297) tienen coeficientes de signo opuesto y magnitud similar, consistente con que ambas codifican información muy relacionada (sin `PhoneService` no puede haber `MultipleLines`). Con regularización L2 y variables correlacionadas, el modelo puede repartir peso entre ellas de forma inestable. El propio capítulo ya advierte esto en la sección 4.3.c, pero la lectura inicial no lo aplicó de forma consistente a `PhoneService`.
 >
 > Conclusión: leer solo el coeficiente individual no permite afirmar que `PhoneService` aporta poco ni que aporta mucho. Por eso se recurrió a la ablación por validación cruzada de la sección 4.7: retirar `PhoneService` reduce ligeramente el AUC-ROC (−0.0014 ± 0.0006) y el PR-AUC (−0.0025 ± 0.0008), y retirarla junto con `MultipleLines` reduce algo más el PR-AUC (−0.0049 ± 0.0022). Es decir, `PhoneService` tiene un aporte pequeño pero medible, que se suma al de `MultipleLines`; su coeficiente de −0.281 refleja en parte la información compartida con esa variable.
 

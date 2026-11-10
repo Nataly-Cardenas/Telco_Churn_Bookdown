@@ -1,0 +1,2 @@
+# El libro está escrito en R Markdown: que GitHub cuente los capítulos como código R.
+*.Rmd linguist-language=R linguist-detectable=true

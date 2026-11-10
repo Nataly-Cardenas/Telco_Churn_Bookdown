@@ -10,16 +10,15 @@ El objetivo es identificar clientes en riesgo: interesa un Recall elevado. Se ut
 
 La evidencia principal procede de validación cruzada anidada sobre 5.634 clientes de desarrollo, con 1.495 abandonos (26,54 %). Se conserva el test histórico de 1.409 clientes, ya expuesto durante la primera entrega: su uso posterior es suplementario y no equivale a una nueva validación externa independiente.
 
-**Antes de ejecutar.** El notebook necesita Python 3.12 y las versiones exactas de `requirements.txt`. Con un entorno virtual estándar:
+**Antes de ejecutar.** El capítulo necesita R 4.1 o superior y los paquetes de la lista. Desde la carpeta del proyecto:
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate          # en macOS/Linux: source .venv/bin/activate
-python -m pip install -r requirements.txt
-python verificar_reproduccion.py
+```r
+install.packages(c("readr", "dplyr", "tidyr", "purrr", "stringr", "jsonlite", "digest", "ggplot2",
+                   "patchwork", "yardstick", "knitr", "kableExtra", "shapviz"))
+sessionInfo()
 ```
 
-El último comando revisa que las versiones instaladas coincidan con las fijadas.
+El último comando muestra las versiones instaladas para dejarlas registradas junto con los resultados.
 
 ```{r mod-002}
 library(readr)
@@ -33,12 +32,6 @@ library(ggplot2)
 library(yardstick)
 library(knitr)
 library(kableExtra)
-
-# Los pipelines finales, el bootstrap (.npz) y las atribuciones SHAP se guardaron con Python (scikit-learn).
-# reticulate crea un entorno de Python con las mismas versiones del experimento para leerlos sin reajustar.
-reticulate::py_require(c("numpy==2.0.2", "pandas==2.3.3", "scikit-learn==1.6.1", "imbalanced-learn==0.14.0",
-                         "xgboost==3.0.5", "cloudpickle==3.1.2", "joblib==1.5.3", "scipy==1.15.3"),
-                       python_version = "3.12")
 
 ROOT <- getwd()
 ANALISIS <- file.path(ROOT, "resultados_modelado/analisis_final")
@@ -64,16 +57,16 @@ tabla <- function(frame, decimales = 4) {
 }
 
 mostrar_codigo <- function(modulo, ...) {
-  # Muestra en el libro el código de funciones definidas en los módulos de complementos/
-  # (los experimentos complementarios se ejecutaron en Python).
-  lineas <- read_lines(file.path(ROOT, "complementos", paste0(modulo, ".py")))
+  # Muestra en el libro el código de funciones definidas en los módulos de R/complementos/.
+  lineas <- read_lines(file.path(ROOT, "R", "complementos", paste0(modulo, ".R")))
   bloques <- map_chr(c(...), function(nombre) {
-    inicio <- grep(paste0("^(def|class) ", nombre, "\\b"), lineas)
-    resto <- grep("^\\S", lineas)
-    fin <- c(resto[resto > inicio], length(lineas) + 1)[1] - 1
-    paste(str_trim(lineas[inicio:fin], side = "right"), collapse = "\n") |> str_trim(side = "right")
+    inicio <- grep(paste0("^", nombre, " <- function"), lineas)
+    doc <- inicio
+    while (doc > 1 && startsWith(lineas[doc - 1], "#")) doc <- doc - 1   # incluye su documentación
+    fin <- grep("^}", lineas); fin <- fin[fin > inicio][1]
+    paste(str_trim(lineas[doc:fin], side = "right"), collapse = "\n")
   })
-  asis_output(paste0("```python\n", paste(bloques, collapse = "\n\n"), "\n```\n"))
+  asis_output(paste0("```r\n", paste(bloques, collapse = "\n\n"), "\n```\n"))
 }
 
 UNIDADES <- leer_tabla("unidades.csv")
@@ -217,10 +210,11 @@ Las dos ramas usan exactamente el mismo procedimiento: `CalibratedClassifierCV` 
 Para medir el resultado se usan el Brier, $\frac{1}{n}\sum_i (p_i-y_i)^2$, que mezcla calibración y discriminación, y el ECE, $\sum_b \frac{n_b}{n}|acc_b-conf_b|$ con diez intervalos uniformes. El ECE depende de cómo se dividan los bins, así que se lee junto con los diagramas de confiabilidad y no como prueba aislada.
 
 ```{r mod-019}
-# La rama isotónica se calculó en Python (complementos/calibracion_isotonica.py) y se lee guardada.
+# La rama isotónica (R/complementos/calibracion_isotonica.R) es costosa: por defecto se lee guardada.
 if (RECALCULAR_COSTOSO) {
-  reticulate::py_run_string("from complementos import calibracion_isotonica as iso; u, p = iso.ejecutar(n_jobs=4)")
-  ISO_UNIDADES <- reticulate::py$u; ISO_PROB <- reticulate::py$p
+  source(file.path(ROOT, "R/complementos/calibracion_isotonica.R"))
+  iso <- ejecutar_isotonica(n_nucleos = 4)
+  ISO_UNIDADES <- iso$metricas; ISO_PROB <- iso$probabilidades
 } else {
   ISO_UNIDADES <- read_csv(file.path(COMPLEMENTARIOS, "calibracion_isotonica/unidades_isotonica.csv"), show_col_types = FALSE)
   ISO_PROB <- read_csv(file.path(COMPLEMENTARIOS, "calibracion_isotonica/probabilidades_isotonica.csv.gz"), show_col_types = FALSE)
@@ -727,9 +721,10 @@ El factor 3 es el valor que suele recomendarse para Hyperband: con 2 se necesita
 **Diseño de la comparación.** Para Random Forest, XGBoost y SVM con SMOTE se ejecutaron dos búsquedas en cada uno de los cinco folds externos de la realización principal: Successive Halving (`HalvingRandomSearchCV`) y una búsqueda aleatoria a fidelidad completa con 24 candidatos, el mismo presupuesto de la sección 1. Ambas usan el mismo Pipeline de la sección 1 (mismas semillas de modelo y de SMOTE), los mismos tres folds internos —reconstruidos y verificados contra su huella SHA-256— y el mismo objetivo, F1 de la clase abandono. También comparten la semilla del muestreo, de modo que los 24 candidatos de la búsqueda completa están entre los 27 que Successive Halving examina en su primera ronda: la comparación mide qué tan bien elige SH con información parcial dentro de prácticamente el mismo conjunto de candidatos. Los espacios son continuos o más amplios que los de la sección 1.5 porque, con el número de árboles como recurso, el espacio de Random Forest solo tenía 8 combinaciones restantes; por eso la referencia directa es la búsqueda completa de esta sección.
 
 ```{r mod-091}
-# Successive Halving se ejecutó en Python (complementos/multifidelidad.py); aquí se leen sus resultados.
+# Successive Halving (R/complementos/multifidelidad.R) es costoso: por defecto se leen sus resultados.
 MULTIFIDELIDAD <- if (RECALCULAR_COSTOSO) {
-  reticulate::py_run_string("from complementos import multifidelidad as mf; r = mf.ejecutar()")$r
+  source(file.path(ROOT, "R/complementos/multifidelidad.R"))
+  ejecutar_multifidelidad(n_nucleos = 4)
 } else {
   read_csv(file.path(COMPLEMENTARIOS, "multifidelidad/multifidelidad_por_fold.csv"), show_col_types = FALSE)
 }
@@ -795,13 +790,13 @@ La sección 2.3 dio las cotas teóricas; aquí se mide qué pasa al cambiar la i
 Para early stopping, el 20 % del entrenamiento externo se separa *antes* de SMOTE y funciona como validación: el modelo deja de añadir árboles cuando la log-loss en esa validación no mejora en 30 rondas. El fold externo nunca participa. Cada variante se entrena y predice cinco veces por fold y se reporta la mediana, para que una interrupción del sistema operativo no pase por aceleración. La memoria es el pico de RSS del proceso durante el ajuste (incluye lo que reservan las librerías en C), por encima del nivel previo; con modelos tan pequeños es una medida ruidosa y se lee solo en orden de magnitud. La inferencia es el tiempo de `predict` sobre el fold externo completo, unas 1.127 filas.
 
 ```{r mod-097}
-# Las mediciones se hicieron en Python (complementos/optimizacion_computacional.py) y se leen guardadas.
+# Las mediciones (R/complementos/optimizacion_computacional.R) se leen guardadas.
 CARPETA_OC <- file.path(COMPLEMENTARIOS, "optimizacion_computacional")
 COMPARACIONES <- read_csv(file.path(CARPETA_OC, "comparaciones_por_fold.csv"), show_col_types = FALSE)
 ESCALAMIENTO <- read_csv(file.path(CARPETA_OC, "escalamiento.csv"), show_col_types = FALSE)
 PARALELO <- read_csv(file.path(CARPETA_OC, "paralelismo_cv.csv"), show_col_types = FALSE)
 GPU <- fromJSON(file.path(CARPETA_OC, "gpu.json"))
-mostrar_codigo("optimizacion_computacional", "Medidor", "correr")
+mostrar_codigo("optimizacion_computacional", "medir", "correr")
 ```
 
 ```{r mod-098}
@@ -1209,14 +1204,16 @@ holm <- function(pvalues) {
 ```
 
 ```{r mod-137}
-library(reticulate)   # lectura del archivo NumPy (.npz) con las muestras bootstrap guardadas
 names_ <- names(PRED_TEST); y <- PRED_TEST[[1]]$y_true
 for (pred in PRED_TEST) stopifnot(identical(pred$y_true, y))
 dl <- delong_covariance(y, do.call(rbind, map(PRED_TEST, "score")))
 auc <- dl$auc; cov_ <- dl$covariance
-bootstrap <- import("numpy")$load(file.path(ESTADISTICA, "bootstrap_test_pareado.npz"))
-stopifnot(identical(as.character(bootstrap[["names"]]), names_))
-samples <- bootstrap[["samples"]]
+# Muestras bootstrap pareadas guardadas: muestra × modelo × métrica (F1, Recall, AUC).
+bootstrap <- read_csv(file.path(ESTADISTICA, "bootstrap_test_pareado.csv"), show_col_types = FALSE)
+stopifnot(identical(unique(bootstrap$modelo), names_))
+samples <- array(bootstrap$valor, dim = c(3, length(names_), n_distinct(bootstrap$muestra)),
+                 dimnames = list(c("f1", "recall", "auc"), names_, NULL)) |>
+  aperm(c(3, 2, 1))
 metricas_test <- tibble::column_to_rownames(METRICAS_TEST, "experiment_id")
 DELONG <- combn(seq_along(names_), 2, simplify = FALSE) |>
   map_dfr(function(par) {
@@ -1266,7 +1263,7 @@ remuestreo_pareado <- function(y, scores, labels, draws = 2000) {
   }
   samples
 }
-# Se reutiliza samples del NPZ: no se vuelve a llamar a remuestreo_pareado.
+# Se reutilizan las muestras bootstrap guardadas: no se vuelve a llamar a remuestreo_pareado.
 ```
 
 ```{r mod-142}
@@ -1301,51 +1298,35 @@ SHAP usa variables transformadas, incluida AvgChargePerMonth; LIME usa variables
 Las contribuciones se expresan en unidades de probabilidad respecto del fondo. El color del resumen representa el valor de la columna transformada; no cambia el signo de la contribución.
 
 ```{r mod-146}
-# Silencia el aviso de barra de progreso que emite shap al importarse.
-reticulate::py_run_string("import warnings; warnings.filterwarnings('ignore', message='IProgress not found')")
-library(reticulate)   # los pipelines finales se ajustaron en Python (scikit-learn) y se cargan sin reajustar
 library(shapviz)
-cloudpickle <- import("cloudpickle")
-np <- import("numpy")
 
 datos_explicacion <- function(eid) {
-  # Transforma datos con el Pipeline ya ajustado; no llama fit.
-  folder <- file.path(ANALISIS, "finalistas", eid)
-  registro <- fromJSON(file.path(folder, "complete.json"))
-  stopifnot(digest(file = file.path(folder, "pipeline.pkl"), algo = "sha256") == registro$pipeline_hash)
-  archivo <- import_builtins()$open(file.path(folder, "pipeline.pkl"), "rb")
-  pipeline <- cloudpickle$load(archivo); archivo$close()
-  saved <- np$load(file.path(ANALISIS, "interpretabilidad", eid, "shap_global.npz"))
-  raw <- read_csv(file.path(ROOT, "WA_Fn-UseC_-Telco-Customer-Churn.csv"), show_col_types = FALSE,
-                  col_types = cols(.default = col_character(), SeniorCitizen = col_integer(),
-                                   tenure = col_integer(), MonthlyCharges = col_double()))[saved[["row_ids"]] + 1, ] |>
-    select(-customerID, -Churn)
-  pasos <- pipeline$named_steps
-  z <- py_to_r(pasos[["prep"]]$transform(pasos[["features"]]$transform(r_to_py(raw))))
-  list(pipeline = pipeline, raw = raw, z = as.matrix(z), saved = saved)
+  # Atribuciones SHAP globales guardadas, valores transformados por el Pipeline final y su probabilidad nativa.
+  carpeta <- file.path(ANALISIS, "interpretabilidad", eid)
+  valores <- read_csv(file.path(carpeta, "shap_global_valores.csv"), show_col_types = FALSE)
+  datos <- read_csv(file.path(carpeta, "shap_global_datos.csv"), show_col_types = FALSE)
+  meta <- fromJSON(file.path(carpeta, "shap_global_base.json"))
+  stopifnot(identical(valores$row_id, datos$row_id))
+  list(values = as.matrix(select(valores, all_of(meta$feature_names))),
+       z = as.matrix(select(datos, all_of(meta$feature_names))),
+       probabilidad = datos$probabilidad_nativa, base = meta$base, row_ids = datos$row_id)
 }
 
-calcular_shap <- function(pipeline, z, background_positions) {
-  # Procedimiento original; solo necesario si no se conservaran las atribuciones.
-  shap <- import("shap")
-  estimator <- pipeline$named_steps[["classifier"]]$estimator_
-  if (class(estimator)[1] == "sklearn.ensemble._forest.RandomForestClassifier") storage.mode(z) <- "double"
-  explainer <- shap$TreeExplainer(estimator, data = z[background_positions, ],
-                                  feature_perturbation = "interventional", model_output = "probability")
-  values <- explainer$shap_values(z, check_additivity = FALSE)
-  if (length(dim(values)) == 3) values <- values[, , 2]
-  list(values = values, base = tail(as.numeric(explainer$expected_value), 1))
+calcular_shap <- function(modelo, z, posiciones_fondo, semilla = 42) {
+  # Procedimiento SHAP intervencional sobre la probabilidad positiva; solo se necesita si no se
+  # conservaran las atribuciones. `modelo` es el clasificador final ya ajustado (parsnip).
+  prediccion <- function(m, x) predict(m, as.data.frame(x), type = "prob")[[".pred_1"]]
+  set.seed(semilla)
+  explicacion <- kernelshap::kernelshap(modelo, X = z, bg_X = z[posiciones_fondo, ], pred_fun = prediccion)
+  list(values = explicacion$S, base = explicacion$baseline)
 }
 
 grafico_shap_global <- function(eid) {
   # Dibuja el resumen a partir de atribuciones y valores transformados reales.
   d <- datos_explicacion(eid)
-  values <- d$saved[["values"]]; base <- as.numeric(d$saved[["base"]])
-  stopifnot(identical(dim(values), dim(d$z)))
-  probabilidad <- py_to_r(d$pipeline$predict_proba(r_to_py(d$raw)))[, 2]
-  stopifnot(max(abs(base + rowSums(values) - probabilidad)) <= 1e-5)
-  colnames(values) <- colnames(d$z) <- as.character(d$saved[["feature_names"]])
-  sv_importance(shapviz(values, X = d$z, baseline = base), kind = "beeswarm", max_display = 20) +
+  stopifnot(identical(dim(d$values), dim(d$z)))
+  stopifnot(max(abs(d$base + rowSums(d$values) - d$probabilidad)) <= 1e-5)   # aditividad de SHAP
+  sv_importance(shapviz(d$values, X = d$z, baseline = d$base), kind = "beeswarm", max_display = 20) +
     ggtitle("SHAP global: probabilidad nativa de abandono")
 }
 
@@ -1353,24 +1334,24 @@ grafico_shap_local <- function(eid, row_id) {
   # Genera waterfall desde contribuciones locales guardadas.
   folder <- file.path(ANALISIS, "interpretabilidad", eid)
   data <- read_csv(file.path(folder, sprintf("shap_local_%s.csv", row_id)), show_col_types = FALSE)
-  base <- as.numeric(np$load(file.path(folder, "shap_global.npz"))[["base"]])
+  base <- fromJSON(file.path(folder, "shap_global_base.json"))$base
   valores <- matrix(data$shap, nrow = 1, dimnames = list(NULL, data$feature))
   sv_waterfall(shapviz(valores, X = as.data.frame(t(set_names(data$value, data$feature))), baseline = base),
                max_display = 12)
 }
 
-calcular_lime <- function(pipeline, raw, observation, seed = 42) {
-  # Procedimiento original de LIME; las explicaciones de la entrega ya existen.
+calcular_lime <- function(flujo, raw, observation, seed = 42) {
+  # Procedimiento de LIME; las explicaciones de la entrega ya existen. `flujo` es el workflow final ajustado.
   library(lime)
   limpiar <- function(d) mutate(d, TotalCharges = replace_na(suppressWarnings(as.numeric(TotalCharges)), 0))
   train <- limpiar(raw); obs <- limpiar(observation)
-  model_type.python.builtin.object <<- function(x, ...) "classification"
-  predict_model.python.builtin.object <<- function(x, newdata, type, ...) {
-    probabilidad <- py_to_r(x$predict_proba(r_to_py(newdata)))
-    data.frame(permanece = probabilidad[, 1], abandono = probabilidad[, 2])
+  model_type.workflow <<- function(x, ...) "classification"
+  predict_model.workflow <<- function(x, newdata, type, ...) {
+    probabilidad <- predict(x, newdata, type = "prob")
+    data.frame(permanece = probabilidad[[".pred_0"]], abandono = probabilidad[[".pred_1"]])
   }
   set.seed(seed)
-  explainer <- lime(train, pipeline, bin_continuous = TRUE)
+  explainer <- lime(train, flujo, bin_continuous = TRUE)
   explain(obs, explainer, labels = "abandono", n_features = 10, n_permutations = 5000)
 }
 

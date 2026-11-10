@@ -41,12 +41,7 @@ jobs:
             any::bookdown, any::rmarkdown, any::knitr, any::htmltools, any::bslib, any::downlit, any::xml2,
             any::readr, any::dplyr, any::tidyr, any::purrr, any::stringr, any::tibble, any::plotly,
             any::digest, any::moments, any::jsonlite, any::ggplot2, any::patchwork, any::tidymodels,
-            any::glmnet, any::kableExtra, any::reticulate, any::shapviz
-
-      # El capítulo de modelado lee con reticulate los pipelines de scikit-learn guardados;
-      # reticulate usa uv para crear el entorno de Python con las versiones del experimento.
-      - name: Instalar uv
-        uses: astral-sh/setup-uv@v6
+            any::glmnet, any::kableExtra, any::shapviz
 
       - name: Construir libro
         run: Rscript construir_libro.R

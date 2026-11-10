@@ -35,7 +35,7 @@ La pérdida de clientes (*churn*) es uno de los principales riesgos financieros 
 
 El problema presenta dos dificultades. Los clientes que abandonan son una minoría (alrededor de uno de cada cuatro), por lo que un modelo puede acertar en la mayoría de los casos sin detectar a casi ninguno de ellos; y las variables disponibles describen el estado del cliente en un momento dado, lo que obliga a interpretar los hallazgos como asociaciones y no como causas del abandono.
 
-Este proyecto aborda la predicción del abandono con el conjunto público Telco Customer Churn de IBM, que combina los servicios contratados, las características de la cuenta y los datos demográficos de cada cliente. A partir de un análisis exploratorio que identifica los perfiles con mayor tasa de abandono, se construye un modelo base de regresión logística y se compara con alternativas más complejas bajo un mismo protocolo de validación, priorizando la detección de los clientes en riesgo sin generar un volumen excesivo de falsas alertas. Los resultados se ponen a disposición en este Jupyter Book, en un paper y en un tablero interactivo.
+Este proyecto aborda la predicción del abandono con el conjunto público Telco Customer Churn de IBM, que combina los servicios contratados, las características de la cuenta y los datos demográficos de cada cliente. A partir de un análisis exploratorio que identifica los perfiles con mayor tasa de abandono, se construye un modelo base de regresión logística y se compara con alternativas más complejas bajo un mismo protocolo de validación, priorizando la detección de los clientes en riesgo sin generar un volumen excesivo de falsas alertas. Los resultados se ponen a disposición en este libro (Bookdown), en un paper y en un tablero interactivo.
 
 ## Contexto del problema {-}
 El *customer churn* es la cancelación o abandono de un servicio. Según los [datos de Kaggle](https://www.kaggle.com/datasets/blastchar/telco-customer-churn), cada fila del conjunto representa un cliente y la columna `Churn` indica si abandonó el servicio durante el último mes. El conjunto de datos incluye información sobre cuatro grupos de variables.
@@ -56,7 +56,7 @@ Identificar a los clientes de una empresa de telecomunicaciones con mayor riesgo
 5. Establecer un modelo de referencia, entrenando una regresión logística como modelo base y cuantificando sus aciertos y errores, en especial los clientes que abandonan y no son detectados.
 6. Comparar alternativas de forma controlada, evaluando 112 configuraciones (7 modelos × 4 técnicas de balanceo × 4 métodos de optimización de hiperparámetros) con validación cruzada anidada y el F1 de la clase de abandono como métrica principal, contrastando estadísticamente sus diferencias, la calibración de probabilidades y el costo computacional.
 7. Explicar las predicciones, identificando con SHAP y LIME las variables que más influyen en el riesgo de abandono, sin atribuirles un efecto causal.
-8. Poner los resultados a disposición, presentando el análisis en un Jupyter Book, un paper y un tablero interactivo que permitan consultar los hallazgos sin necesidad de ejecutar el código.
+8. Poner los resultados a disposición, presentando el análisis en un libro (Bookdown), un paper y un tablero interactivo que permitan consultar los hallazgos sin necesidad de ejecutar el código.
 
 ## Marco teórico {-}
 
@@ -143,7 +143,7 @@ El identificador no representa una característica explicativa. Los demás campo
 
 <div class="tc-card-item step-card"><div class="tc-card-title">4. Paper</div><div class="tc-card-body">Versión web y PDF del artículo con la metodología y los resultados del proyecto.</div></div>
 
-<div class="tc-card-item step-card"><div class="tc-card-title">5. Guía del Repositorio</div><div class="tc-card-body">Estructura del repositorio, requisitos, orden de ejecución de los notebooks y construcción del libro.</div></div>
+<div class="tc-card-item step-card"><div class="tc-card-title">5. Guía del Repositorio</div><div class="tc-card-body">Estructura del repositorio, requisitos, orden de ejecución de los capítulos y construcción del libro.</div></div>
 </div>
 ```
 

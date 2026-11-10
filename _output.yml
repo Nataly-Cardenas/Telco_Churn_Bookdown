@@ -3,11 +3,10 @@ bookdown::bs4_book:
     primary: "#1B4F72"
     fg: "#243447"
     bg: "#FFFFFF"
-  css:
-    - style/componentes.css
-    - style/libro.css
+  # Estilos y cabecera generados desde R (R/estilos.R).
+  css: !expr source("R/estilos.R")$value$css
   includes:
-    in_header: style/cabecera.html
+    in_header: !expr source("R/estilos.R")$value$cabecera
   repo:
     base: https://github.com/Nataly-Cardenas/Telco_Churn_Bookdown
     branch: main

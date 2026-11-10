@@ -154,7 +154,7 @@ tabla(tibble(Filas = nrow(df), Columnas = ncol(df), Identificador = "customerID"
 El archivo contiene 7043 filas y 21 columnas. `customerID` identifica a cada cliente y `Churn` es la variable objetivo. Las dimensiones incluyen ambos campos, por lo que el total de columnas no equivale al número de predictores.
 
 ## 2. División train / test {-}
-Se hace una división 80/20 con random_state=42 y stratify=y. La estratificación se fija por la naturaleza binaria del objetivo; no se busca una semilla favorable. customerID se excluye de X por ser identificador. Se conservan índices para reproducir el split: se guardan en `train_index.csv` / `test_index.csv` y se verifican contra los que usa el notebook de preprocesamiento (celda siguiente a `del df, X, y`). Test solo interviene en comprobaciones de tamaño y disyunción; no se publican sus estadísticas ni se usa posteriormente.
+Se hace una división 80/20 con semilla 42 y estratificación por Churn. La estratificación se fija por la naturaleza binaria del objetivo; no se busca una semilla favorable. customerID se excluye de X por ser identificador. Se conservan índices para reproducir el split: se guardan en `train_index.csv` / `test_index.csv` y se verifican contra los que usa el capítulo de preprocesamiento (celda siguiente a `del df, X, y`). Test solo interviene en comprobaciones de tamaño y disyunción; no se publican sus estadísticas ni se usa posteriormente.
 
 ```{r eda-019}
 # División 80/20 estratificada (random_state = 42). Para reproducir exactamente la misma
@@ -182,11 +182,11 @@ rm(df, X, y)
 
 #### Trazabilidad de la partición {-}
 
-El notebook de preprocesamiento vuelve a dividir los datos con la misma semilla. Para no depender de que ambos coincidan "por construcción", se guardan los índices de `train` y `test` (o, si ya existen, se comprueba que sean idénticos). Solo se usan índices: no se leen estadísticas ni etiquetas de `test`.
+El capítulo de preprocesamiento vuelve a dividir los datos con la misma semilla. Para no depender de que ambos coincidan "por construcción", se guardan los índices de `train` y `test` (o, si ya existen, se comprueba que sean idénticos). Solo se usan índices: no se leen estadísticas ni etiquetas de `test`.
 
 ```{r eda-023}
 # Trazabilidad de la partición: PREPROCESAMIENTO usa train_index.csv / test_index.csv.
-# Se comprueban los índices (no solo los tamaños) para garantizar que ambos notebooks usan el mismo split.
+# Se comprueban los índices (no solo los tamaños) para garantizar que ambos capítulos usan el mismo split.
 IDX_TRAIN <- "train_index.csv"; IDX_TEST <- "test_index.csv"
 if (file.exists(IDX_TRAIN) && file.exists(IDX_TEST)) {
   ref_train <- read_csv(IDX_TRAIN, show_col_types = FALSE)$train_index
@@ -255,7 +255,7 @@ tabla(tibble(Comprobación = c("IDs repetidos en train", "Perfiles repetidos (si
       "Identidad y perfiles coincidentes")
 ```
 
-No se registran IDs repetidos en train, pero sí 15 perfiles coincidentes cuando se omite el identificador y se incluye `Churn`. La coincidencia de atributos entre clientes con identificadores diferentes no demuestra que sean registros duplicados del mismo cliente; por sí sola, esta tabla no justifica eliminarlos. La coincidencia de perfiles entre `train` y `test` se cuantifica aparte, como diagnóstico de independencia y sin usarla para decidir tratamientos, en la sección 3 del notebook de preprocesamiento.
+No se registran IDs repetidos en train, pero sí 15 perfiles coincidentes cuando se omite el identificador y se incluye `Churn`. La coincidencia de atributos entre clientes con identificadores diferentes no demuestra que sean registros duplicados del mismo cliente; por sí sola, esta tabla no justifica eliminarlos. La coincidencia de perfiles entre `train` y `test` se cuantifica aparte, como diagnóstico de independencia y sin usarla para decidir tratamientos, en la sección 3 del capítulo de preprocesamiento.
 
 ## 3. Análisis univariado {-}
 
@@ -1676,7 +1676,7 @@ Síntesis de los resultados de train. Se distinguen hallazgos descriptivos, evid
 7. Los faltantes se limitan a 8 registros de `TotalCharges` (0.14%), todos con antigüedad cero. Fisher no aporta evidencia suficiente de relación de la ausencia con churn, pero sí con antigüedad cero. Esto cuestiona asumir MCAR y no identifica todo el mecanismo de ausencia; no se ha reportado una prueba global de MCAR ni imputado datos.
 
 8. La siguiente etapa deberá comparar el tratamiento de `TotalCharges`, codificar categorías, revisar escalas y redundancias, y evaluar una regresión logística inicial mediante validación interna de train. Las decisiones deberán justificarse por generalización y métricas apropiadas para churn, manteniendo el test fuera del diseño y la selección de alternativas.
-9. Limitación conceptual a documentar antes de modelar (no verificable solo con este código): según la documentación habitual de este dataset (IBM Telco Customer Churn), `Churn = Yes` significa que el cliente se fue *en el último mes* antes del corte. Si es así, `tenure` y `TotalCharges` de quienes abandonaron pueden estar "congelados" en el momento de la baja, mientras que en quienes permanecen esas mismas variables siguen acumulándose después del corte — los 8 registros con `TotalCharges` ausente y `tenure = 0` son consistentes con esto (todos son `Churn = No`, clientes recién dados de alta). Esto no es *data leakage* en sentido estricto, pero sí acota qué mide el score del modelo: clasificación dentro de un corte, no necesariamente predicción prospectiva de churn futuro. Se documenta con más detalle, junto con la disponibilidad temporal de cada variable, en la sección 2.1 del notebook de preprocesamiento.
+9. Limitación conceptual a documentar antes de modelar (no verificable solo con este código): según la documentación habitual de este dataset (IBM Telco Customer Churn), `Churn = Yes` significa que el cliente se fue *en el último mes* antes del corte. Si es así, `tenure` y `TotalCharges` de quienes abandonaron pueden estar "congelados" en el momento de la baja, mientras que en quienes permanecen esas mismas variables siguen acumulándose después del corte — los 8 registros con `TotalCharges` ausente y `tenure = 0` son consistentes con esto (todos son `Churn = No`, clientes recién dados de alta). Esto no es *data leakage* en sentido estricto, pero sí acota qué mide el score del modelo: clasificación dentro de un corte, no necesariamente predicción prospectiva de churn futuro. Se documenta con más detalle, junto con la disponibilidad temporal de cada variable, en la sección 2.1 del capítulo de preprocesamiento.
 
 ```{r eda-134}
 saveRDS(list(X_train = X_train, X_test = X_test, y_train = y_train, y_test = y_test), "train_test_split.rds")
