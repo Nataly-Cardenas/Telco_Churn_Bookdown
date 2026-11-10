@@ -1,6 +1,6 @@
 # Telco Customer Churn — Bookdown
 
-Versión en Bookdown (R) del Jupyter Book [Telco_Churn_JBook](https://github.com/Nataly-Cardenas/Telco_Churn_JBook). El libro tiene el mismo contenido, las mismas secciones, interpretaciones y el mismo diseño (incluido el modo oscuro por defecto). El código de los capítulos está escrito en R y se muestra plegado con "Show code cell source"; al construir el libro, ese código se ejecuta y genera todas las tablas y gráficas.
+Versión en Bookdown (R) del Jupyter Book [Telco_Churn_JBook](https://nataly-cardenas.github.io/Telco_Churn_Bookdown/eda.html). El libro tiene el mismo contenido, las mismas secciones, interpretaciones y el mismo diseño (incluido el modo oscuro por defecto). El código de los capítulos está escrito en R y se muestra plegado con "Show code cell source"; al construir el libro, ese código se ejecuta y genera todas las tablas y gráficas.
 
 ## Estructura
 
