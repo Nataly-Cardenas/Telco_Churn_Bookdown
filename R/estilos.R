@@ -1385,6 +1385,48 @@ main pre code {
 }
 
 
+/* ---------- Proposiciones y algoritmos (capítulo del modelo propio) ---------- */
+
+.tc-prf {
+
+  border: 1px solid var(--jb-border);
+
+  border-top: 4px solid #1B4F72;
+
+  border-radius: 4px;
+
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+
+  margin: 1.5rem 0;
+
+  padding: 0 1rem 0.75rem;
+
+  background: var(--jb-bg);
+}
+
+
+.tc-prf .tc-prf-title {
+
+  display: block;
+
+  margin: 0 -1rem 0.75rem;
+
+  padding: 0.5rem 1rem;
+
+  font-weight: 700;
+
+  background: rgba(27, 79, 114, 0.1);
+
+  color: var(--jb-heading);
+}
+
+
+.tc-prf-algorithm {
+
+  border-top-color: #06B6D4;
+}
+
+
 /* ---------- Botón y pestañas del paper ---------- */
 
 .tc-boton {

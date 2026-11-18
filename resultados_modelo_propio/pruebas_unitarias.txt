@@ -1,0 +1,22 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.14, pytest-8.3.5, pluggy-1.7.0 -- C:\Users\natal\Downloads\anaconda\envs\ml_project\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\natal\Desktop\Telco_Churn_Entregable
+configfile: pytest.ini
+plugins: anyio-4.15.1
+collecting ... collected 12 items
+
+tests/test_original_model.py::test_aprende_mejor_que_azar PASSED         [  8%]
+tests/test_original_model.py::test_reproducible_con_misma_semilla PASSED [ 16%]
+tests/test_original_model.py::test_entradas_invalidas PASSED             [ 25%]
+tests/test_original_model.py::test_clone_conserva_hiperparametros PASSED [ 33%]
+tests/test_original_model.py::test_log_posterior_nunca_baja PASSED       [ 41%]
+tests/test_original_model.py::test_optimo_global_por_concavidad PASSED   [ 50%]
+tests/test_original_model.py::test_salidas_validas PASSED                [ 58%]
+tests/test_original_model.py::test_un_region_equivale_a_pesos_globales PASSED [ 66%]
+tests/test_original_model.py::test_fit_from_predictions_equivale_a_fit PASSED [ 75%]
+tests/test_original_model.py::test_gmm_varias_inicializaciones_no_empeora PASSED [ 83%]
+tests/test_original_model.py::test_optimo_global_en_el_borde PASSED      [ 91%]
+tests/test_original_model.py::test_variantes_del_protocolo PASSED        [100%]
+
+============================= 12 passed in 7.03s ==============================

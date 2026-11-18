@@ -1,2 +1,6 @@
 # El libro está escrito en R Markdown: que GitHub cuente los capítulos como código R.
 *.Rmd linguist-language=R linguist-detectable=true
+# Datos y bibliografía: no cuentan en las estadísticas de lenguajes.
+*.bib linguist-detectable=false
+*.csv linguist-detectable=false
+*.json linguist-detectable=false

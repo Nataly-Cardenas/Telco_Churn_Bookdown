@@ -1,0 +1,399 @@
+# Protocolo y validación estadística {#validacion -}
+
+¿RegionalMAPEM predice mejor que el mejor benchmark? Este capítulo responde con el protocolo que congelamos antes de
+correr los experimentos definitivos. La respuesta corta es que no: en Telco empata con la logística con splines, le gana
+con claridad a 7 de los 11 benchmarks y no cumple la definición de superioridad que fijamos. Lo que sigue muestra cómo
+llegamos a esa conclusión y por qué es sólida.
+
+## El protocolo {-}
+
+El diseño quedó fijado en [`experiments/protocolo.md`](https://github.com/Nataly-Cardenas/Telco_Churn_Entregable/blob/main/experiments/protocolo.md)
+con el tag de Git `protocolo-v1` (8 de noviembre de 2026, 16:13), antes de evaluar un solo pliegue externo. Sus puntos
+centrales:
+
+| Elemento | Decisión |
+|---|---|
+| Hipótesis principal (H1) | RegionalMAPEM tiene menor log-loss medio externo que el mejor benchmark en Telco |
+| Métrica principal | Log-loss. La elegimos después de los pilotos, y así quedó declarado: mide la calidad de la probabilidad, que es lo que combina el modelo |
+| Métricas secundarias | F1 de la clase churn y AUC, que también entran en la corrección por comparaciones múltiples |
+| Particiones | Validación anidada [@cawley2010] 5 × 5 en Telco (5634 clientes de desarrollo), 3 pliegues internos; el hold-out de 1409 clientes se evalúa una sola vez al final |
+| Presupuesto | 30 evaluaciones de Optuna [@akiba2019] con TPE [@bergstra2011] por modelo y pliegue, con el mismo punto de partida recomendado |
+| Calibración | Platt [@platt1999] dentro del bucle interno para todos los modelos; sin SMOTE |
+| Pruebas | Nadeau-Bengio [@nadeau2003] (T1), permutación pareada de signos (T2), Friedman con Iman-Davenport [@iman1980] y Nemenyi [@demsar2006] (T3), Wilcoxon (T4), DeLong [@delong1988] y McNemar [@mcnemar1947] en el hold-out |
+| Comparaciones múltiples | Holm [@holm1979] sobre una sola familia de 223 comparaciones, con α = 0,05 |
+| Tamaño del efecto | δ de Cliff, con el umbral de 0,147 de @romano2006 |
+
+Las desviaciones posteriores al tag están registradas en la sección 12 del protocolo. Ninguna cambia qué se calcula:
+
+| # | Qué pasó | Efecto |
+|---|---|---|
+| D1 | La corrida con 16 procesos se cayó por falta de recursos del sistema y se relanzó con 10 | Ninguno: cada tarea tiene semilla fija; tres tareas repetidas coinciden bit a bit con sus checkpoints |
+| D2 | Se silenció el registro de Optuna | Solo cambia lo que se imprime |
+| D3 | Los scripts de análisis se escribieron después del tag y se corrigieron antes de usarse (procesos, semillas de SHAP, un `Pipeline` anidado) | Ninguno sobre la familia confirmatoria |
+| D4 | La escalabilidad se midió con un solo proceso | Tiempos comparables entre modelos |
+| D5 | El análisis de los cuatro conjuntos se selló con SHA-256 antes de abrir el hold-out | Trazabilidad |
+| D6 | Monitor de solo lectura durante la corrida | Ninguno |
+| D7 | En SHAP, `TotalCharges` vacío pasa a 0 antes de explicar | Ninguno sobre clientes reales |
+
+El sello de D5 se puede comprobar: las tablas de `experiments/resultados/tablas_pre_holdout/` coinciden con las huellas
+de `sello_pre_holdout.json`, y al sumar las tres pruebas del hold-out ningún p crudo de las otras 220 comparaciones cambió
+ni ninguna decisión de Holm se invirtió.
+
+```{r val-02}
+# Configuración: solo se leen tablas versionadas; nada se reentrena.
+source("R/presentacion.R")
+TAB <- file.path("experiments", "resultados", "tablas")
+FAM <- leer_csv(file.path(TAB, "familia_resultados.csv"))            # las 223 comparaciones con p crudo y p de Holm
+POR_PLIEGUE <- leer_csv(file.path(TAB, "metricas_por_pliegue.csv"))    # métricas de cada modelo en cada pliegue externo
+RESUMEN <- leer_csv(file.path(TAB, "resumen_modelos.csv"))
+COSTOS <- leer_csv(file.path(TAB, "costos_por_pliegue.csv"))
+VEREDICTO <- leer_json(file.path(TAB, "veredicto_R3.json"))
+FRIEDMAN <- leer_json(file.path(TAB, "friedman_telco.json"))
+MEJOR <- VEREDICTO$mejor_benchmark$telco
+
+# Comprobación del sello previo al hold-out (desviación D5)
+sello <- leer_json(file.path("experiments", "resultados", "sello_pre_holdout.json"))
+intactas <- all(vapply(names(sello$archivos), function(k)
+  digest::digest(file = file.path("experiments", "resultados", "tablas_pre_holdout", k), algo = "sha256") == sello$archivos[[k]],
+  logical(1)))
+nota(sprintf("<b>Sello previo al hold-out:</b> %d tablas fechadas el %s, %s.", length(sello$archivos),
+             sub("T", " a las ", substr(sello$fecha, 1, 16), fixed = TRUE),
+             if (intactas) "todas intactas" else "ALGUNA MODIFICADA"), if (intactas) "ok" else "warn")
+```
+
+## Equidad de la comparación {-}
+
+Una ventaja solo significa algo si todos los modelos tuvieron las mismas oportunidades. Cada benchmark y el modelo propio
+recibieron 30 evaluaciones de hiperparámetros en cada pliegue externo, con el mismo preprocesamiento (ajustado dentro de
+cada pliegue), las mismas particiones, la misma calibración de Platt y la misma métrica de búsqueda. La tabla muestra el
+presupuesto realmente consumido en Telco: ningún ensayo falló y todos los modelos usaron sus 30 evaluaciones. Lo que
+cambia entre modelos es el tiempo, no el número de oportunidades.
+
+```{r val-04}
+# Presupuesto consumido en Telco, promedio por pliegue externo (25 pliegues)
+c6 <- COSTOS |> filter(conjunto == "telco") |> group_by(modelo) |>
+  summarise(ensayos = mean(ensayos), fallidos = sum(fallidos), busqueda = mean(seg_busqueda),
+            ajuste = mean(seg_ajuste), pred = mean(seg_pred_por_1000)) |>
+  arrange(busqueda)
+tabla(data.frame(Modelo = nombre(c6$modelo), `Evaluaciones por pliegue` = as.integer(round(c6$ensayos)),
+                 `Evaluaciones fallidas (total)` = as.integer(c6$fallidos), `Búsqueda (min)` = c6$busqueda / 60,
+                 `Ajuste final (s)` = c6$ajuste, `Predicción (ms por 1000 clientes)` = 1000 * c6$pred, check.names = FALSE),
+      "Tabla 6.1. Presupuesto de optimización consumido en Telco", decimales = 2,
+      nota = paste("Medias por pliegue externo. La búsqueda incluye los 3 pliegues internos y la calibración. En RegionalMAPEM",
+                   "solo cuenta la combinación: sus expertos son los benchmarks ya ajustados."))
+```
+
+CatBoost y Random Forest son los más caros de ajustar; la logística con splines, el mejor benchmark, es de los más
+baratos. El modelo propio parece rápido porque reutiliza las predicciones fuera de pliegue de los expertos, pero en
+producción arrastra el costo de los once.
+
+## Resultados en Telco {-}
+
+La tabla 6.2 resume los 25 pliegues externos. Para el log-loss se agrega el intervalo de confianza BCa del 95 % de la
+media por pliegue.
+
+```{r val-06}
+# Resumen del bucle externo en Telco: media ± desviación estándar sobre los 25 pliegues
+r <- RESUMEN |> filter(conjunto == "telco") |> arrange(log_loss_media)
+tiempos <- COSTOS |> filter(conjunto == "telco") |> group_by(modelo) |>
+  summarise(seg_ajuste = mean(seg_ajuste), seg_pred_por_1000 = mean(seg_pred_por_1000))
+t6 <- tiempos[match(r$modelo, tiempos$modelo), ]
+tabla(data.frame(Modelo = nombre(r$modelo),
+                 `Log-loss` = media_de(r$log_loss_media, r$log_loss_de),
+                 `IC 95 % (BCa)` = sprintf("[%s; %s]", numero(r$log_loss_ic_bajo, 4), numero(r$log_loss_ic_alto, 4)),
+                 F1 = media_de(r$f1_media, r$f1_de), AUC = media_de(r$auc_media, r$auc_de),
+                 Brier = media_de(r$brier_media, r$brier_de), ECE = media_de(r$ece_media, r$ece_de),
+                 `Ajuste (s)` = t6$seg_ajuste, `Predicción (ms / 1000)` = 1000 * t6$seg_pred_por_1000, check.names = FALSE),
+      "Tabla 6.2. Modelo propio, variantes de ablación y benchmarks en Telco (25 pliegues externos)", decimales = 2,
+      nota = "Ordenada por log-loss. Ajuste y predicción: medias por pliegue; en los combinadores no incluyen a los expertos.")
+```
+
+Las diferencias de la parte alta son minúsculas. RegionalMAPEM (0,41127) queda a 0,00003 de la logística con splines
+(0,41130), menos de una décima parte de la desviación estándar entre pliegues. Por delante quedan dos combinadores más
+simples: los pesos globales ($K = 1$) y el stacking logístico. Todos los combinadores calibrados superan a los modelos
+individuales clásicos, y la calibración es buena en general (ECE entre 0,024 y 0,045), resultado del Platt interno.
+
+### Diagrama de diferencia crítica {-}
+
+Friedman con la corrección de Iman-Davenport compara los rangos de los 17 modelos en los 25 pliegues. El diagrama
+une con una barra los modelos cuya diferencia de rango medio es menor que la diferencia crítica de Nemenyi.
+
+```{r val-08, fig.width = 10, fig.height = 4.6}
+# Diagrama de diferencia crítica (Demšar, 2006) con los rangos de Friedman en Telco
+diagrama_cd <- function(rangos, cd, titulo) {
+  rangos <- unlist(rangos)
+  nombres <- names(sort(rangos)); k <- length(nombres); R <- unname(rangos[nombres])
+  mitad <- (k + 1) %/% 2
+  i <- seq_len(k) - 1
+  izquierda <- i < mitad
+  y <- 0.72 - 0.075 * ifelse(izquierda, i, k - 1 - i)
+  xt <- ifelse(izquierda, 1 - 0.2, k + 0.2)
+  color <- ifelse(nombres == "RegionalMAPEM", RIESGO, "#243B53")
+  conectores <- data.frame(x = R, y = y, xt = xt, color = color)
+  etiquetas <- data.frame(x = xt + ifelse(izquierda, -0.15, 0.15), y = y, hjust = ifelse(izquierda, 0, 1), color = color,
+                          texto = sprintf("%s (%s)", nombre(nombres), numero(R, 2)),
+                          negrita = ifelse(nombres == "RegionalMAPEM", "bold", "plain"))
+  # grupos sin diferencia significativa: barras horizontales
+  grupos <- list()
+  for (a in seq_len(k)) {
+    b <- max(which(seq_len(k) >= a & R - R[a] < cd))
+    if (b > a && !any(vapply(grupos, function(g) g[1] <= a && b <= g[2], logical(1)))) grupos[[length(grupos) + 1]] <- c(a, b)
+  }
+  barras <- do.call(rbind, lapply(seq_along(grupos), function(n) {
+    g <- grupos[[n]]; data.frame(x1 = R[g[1]] - 0.05, x2 = R[g[2]] + 0.05, y = 0.78 - 0.018 * ((n - 1) %% 6))
+  }))
+  ggplot() +
+    annotate("segment", x = 1, xend = k, y = 0.82, yend = 0.82, colour = "#243B53", linewidth = 0.4) +
+    annotate("segment", x = 1:k, xend = 1:k, y = 0.80, yend = 0.84, colour = "#243B53", linewidth = 0.4) +
+    annotate("text", x = 1:k, y = 0.87, label = 1:k, size = 2.9) +
+    annotate("segment", x = 1, xend = 1 + cd, y = 0.97, yend = 0.97, colour = RIESGO, linewidth = 0.9) +
+    annotate("text", x = 1 + cd / 2, y = 0.92, label = paste("CD =", numero(cd, 2)), colour = RIESGO, size = 3.2) +
+    geom_segment(data = conectores, aes(x = x, xend = x, y = 0.82, yend = y, colour = color), linewidth = 0.35) +
+    geom_segment(data = conectores, aes(x = x, xend = xt, y = y, yend = y, colour = color), linewidth = 0.35) +
+    geom_text(data = etiquetas, aes(x = x, y = y, label = texto, hjust = hjust, colour = color, fontface = negrita), size = 3.1) +
+    geom_segment(data = barras, aes(x = x1, xend = x2, y = y, yend = y), colour = ACENTO, linewidth = 1.3) +
+    scale_colour_identity() +
+    scale_x_reverse(expand = expansion(add = 4.6)) + scale_y_continuous(limits = c(0, 1)) +
+    labs(title = titulo) + theme_void(base_size = 12) +
+    theme(plot.title = element_text(face = "bold", colour = AZUL, hjust = 0.5),
+          plot.background = element_rect(fill = "white", colour = NA))
+}
+diagrama_cd(FRIEDMAN$rangos, FRIEDMAN$CD, "Figura 6.1. Rangos medios de log-loss en Telco (1 = mejor), 25 pliegues")
+tabla(data.frame(`Estadístico de Iman-Davenport (F_F)` = FRIEDMAN$F_F, p = FRIEDMAN$p, `Modelos (k)` = as.integer(FRIEDMAN$k),
+                 `Pliegues (N)` = as.integer(FRIEDMAN$N), `Diferencia crítica de Nemenyi (α = 0,05)` = FRIEDMAN$CD, check.names = FALSE),
+      "Tabla 6.3. Prueba de Friedman con corrección de Iman-Davenport en Telco", decimales = 3, columnas_p = "p", buscar = FALSE)
+```
+
+Friedman rechaza con holgura que todos los modelos sean iguales, así que tiene sentido mirar los pares. RegionalMAPEM
+tiene rango medio 3,90 y la logística con splines 4,88: la distancia (0,98) está muy por debajo de la diferencia crítica
+de 4,94. En cambio, Naive Bayes, el árbol, kNN, SVM, Random Forest, CatBoost y XGBoost quedan a más de esa distancia,
+y Nemenyi confirma esas siete diferencias después de Holm.
+
+### Pruebas frente al mejor benchmark {-}
+
+El mejor benchmark se define, como en el protocolo, por el menor log-loss medio externo entre los 11: la logística con
+splines. La tabla 6.4 reúne las pruebas que deciden R3 y las de las métricas secundarias, con sus supuestos. Las
+diferencias se expresan como original menos rival, en las unidades de cada métrica: en log-loss un valor negativo
+favorece al modelo propio; en F1 y AUC, uno positivo.
+
+```{r val-10}
+# Tabla de pruebas de hipótesis frente a la logística con splines (Telco y hold-out)
+H0 <- c(T1 = "Media de las diferencias por pliegue = 0", T2 = "Diferencias por cliente simétricas en torno a 0",
+        T4 = "Mediana de las diferencias por pliegue = 0", T3_nemenyi = "Rangos medios iguales",
+        permutacion = "Diferencias de pérdida por cliente simétricas en torno a 0", mcnemar = "Igual tasa de aciertos",
+        delong = "AUC iguales")
+NOMBRE_PRUEBA <- c(T1 = "t corregida de Nadeau-Bengio", T2 = "Permutación pareada de signos (100 000)", T4 = "Wilcoxon de rangos con signo",
+                   T3_nemenyi = "Nemenyi (tras Friedman)", permutacion = "Permutación pareada", mcnemar = "McNemar exacto", delong = "DeLong")
+METRICA <- c(log_loss = "Log-loss", f1_positivo = "F1", auc_roc = "AUC")
+
+supuesto <- function(f) {
+  switch(f$prueba,
+    T1 = paste0("Normalidad de las diferencias: Shapiro-Wilk p = ", valor_p(f$shapiro_p),
+                "; corrección de varianza por solapamiento de pliegues"),
+    T4 = paste0("Simetría de las diferencias: asimetría = ", numero(f$asimetria, 2)),
+    T2 = "Intercambiabilidad del signo bajo H0; pérdida por cliente promediada sobre repeticiones",
+    T3_nemenyi = "Bloques (pliegues) comparables; Friedman significativo",
+    mcnemar = "Clientes independientes en el hold-out; umbral fijado en desarrollo",
+    delong = "Clientes independientes; normalidad asintótica del estimador",
+    "Clientes independientes en el hold-out")
+}
+
+sel <- FAM |> filter(modelo_b == MEJOR, dataset %in% c("telco", "telco_holdout"),
+                     prueba %in% c("T1", "T2", "T4", "T3_nemenyi", "permutacion", "mcnemar", "delong"))
+filas <- lapply(seq_len(nrow(sel)), function(i) {
+  f <- sel[i, ]
+  dif <- if (f$bloque == "C_holdout" || f$prueba == "T3_nemenyi") f$dif_media    # ya es original − rival (en rangos para Nemenyi)
+         else if (f$metrica == "log_loss") f$dif_media else -f$dif_media
+  efecto <- if (!is.na(f$cliff)) sprintf("δ de Cliff = %s (%s)", numero(f$cliff, 3), f$magnitud) else
+    if (f$prueba == "T3_nemenyi") "diferencia de rangos" else "—"
+  data.frame(Conjunto = if (f$bloque == "C_holdout") "Hold-out" else "Telco, 25 pliegues", `Métrica` = METRICA[[f$metrica]],
+             Prueba = NOMBRE_PRUEBA[[f$prueba]], H0 = H0[[f$prueba]], `Supuestos verificados` = supuesto(f),
+             `Estadístico` = f$estadistico, `Diferencia (original − rival)` = dif, `p crudo` = f$p_crudo, `p Holm` = f$p_holm,
+             `Tamaño del efecto` = efecto, `Conclusión` = if (f$p_holm < 0.05) "Se rechaza H0" else "No se rechaza H0",
+             check.names = FALSE)
+})
+tabla(do.call(rbind, filas), paste("Tabla 6.4. Pruebas de hipótesis: RegionalMAPEM frente a", nombre(MEJOR)), decimales = 5,
+      columnas_p = c("p crudo", "p Holm"), nota = "p Holm: ajuste sobre la familia completa de 223 comparaciones.")
+```
+
+Ninguna prueba rechaza la igualdad. La diferencia media de log-loss es de −0,00003 por cliente, con un intervalo BCa de
+[−0,0005; 0,0006] que contiene al cero, y el modelo propio gana en 14 de 25 pliegues: lo que se esperaría lanzando una
+moneda. El δ de Cliff (−0,008) es despreciable. En F1 la logística con splines queda incluso un poco por encima (0,004
+en promedio, δ de Cliff pequeño en su favor), y en AUC el empate es casi exacto.
+
+En el hold-out, el modelo propio obtiene mejor log-loss, F1 y AUC que la logística con splines, pero las tres diferencias
+son pequeñas y ninguna sobrevive a Holm. McNemar es la más cercana (p crudo 0,0016), con una mejora de F1 de 0,008;
+después del ajuste queda en 0,17. Como el hold-out es una sola muestra de 1409 clientes, este resultado no compensa el
+empate de los 25 pliegues.
+
+**Significancia práctica.** Aun si la diferencia de Telco fuera real, 0,00003 de log-loss por cliente equivale a cambiar
+la probabilidad asignada a un cliente que abandona de, por ejemplo, 0,600 a 0,60002. Para una campaña de retención eso no
+cambia ninguna decisión.
+
+### Supuestos de las pruebas sobre pliegues {-}
+
+Nadeau-Bengio supone diferencias aproximadamente normales y corrige la varianza porque los pliegues comparten clientes de
+entrenamiento. Wilcoxon supone diferencias simétricas. La figura 6.2 muestra las 25 diferencias y su gráfico Q-Q.
+
+```{r val-12, fig.width = 10.5, fig.height = 3.9}
+# Diferencias por pliegue (RegionalMAPEM − logística con splines) y su ajuste a la normal
+P <- POR_PLIEGUE |> filter(conjunto == "telco") |> select(rep, pliegue, modelo, log_loss) |>
+  pivot_wider(names_from = modelo, values_from = log_loss) |> arrange(rep, pliegue)
+dif <- data.frame(posicion = seq_len(nrow(P)) - 1, rep = factor(paste("repetición", P$rep)),
+                  d = (P$RegionalMAPEM - P[[MEJOR]]) * 1e4)
+izq <- ggplot(dif, aes(posicion, d)) +
+  geom_hline(yintercept = 0, colour = GRIS, linewidth = 0.5) +
+  geom_hline(aes(yintercept = mean(d), linetype = "media"), colour = RIESGO, linewidth = 0.6) +
+  geom_point(aes(colour = rep), size = 2.2) +
+  scale_colour_manual(values = CICLO[1:5], name = NULL) + scale_linetype_manual(values = "dashed", name = NULL) +
+  scale_y_continuous(labels = eje_es()) +
+  labs(x = "pliegue externo (orden de repetición)", y = "diferencia de log-loss (× 10⁻⁴)",
+       title = "Diferencias por pliegue (negativo favorece al modelo propio)") +
+  tema_libro(10) + theme(legend.position = c(0.02, 0.98),
+                         legend.justification = c(0, 1), legend.text = element_text(size = 7),
+                         legend.key.size = unit(0.35, "cm"), legend.box = "horizontal") +
+  guides(colour = guide_legend(ncol = 2, order = 1), linetype = guide_legend(order = 2))
+# Gráfico Q-Q: posiciones de Filliben, como scipy.stats.probplot
+n <- nrow(dif); orden <- sort(dif$d)
+m <- c(1 - 0.5^(1 / n), (2:(n - 1) - 0.3175) / (n + 0.365), 0.5^(1 / n))
+qq <- data.frame(teorico = qnorm(m), observado = orden)
+ajuste <- coef(lm(observado ~ teorico, qq))
+der <- ggplot(qq, aes(teorico, observado)) +
+  geom_line(aes(y = ajuste[1] + ajuste[2] * teorico), colour = RIESGO, linewidth = 0.6) +
+  geom_point(colour = AZUL, size = 2.2) + scale_x_continuous(labels = eje_es()) + scale_y_continuous(labels = eje_es()) +
+  labs(x = "cuantil teórico de la normal", y = "cuantil observado (× 10⁻⁴)", title = "Gráfico Q-Q de las 25 diferencias") +
+  tema_libro(10)
+izq + der + titulo_figura("Figura 6.2. Diferencias de log-loss frente a la logística con splines en Telco")
+```
+
+Las diferencias se reparten a ambos lados del cero sin un patrón por repetición. Shapiro-Wilk no rechaza la normalidad
+(p = 0,053), aunque queda cerca del límite, y la asimetría es moderada (0,97), con una cola hacia diferencias positivas.
+Por eso no nos apoyamos en una sola prueba: la permutación de signos no supone normalidad y llega a la misma conclusión.
+
+### Ablación {-}
+
+La ablación responde de dónde viene el desempeño del modelo. Cada variante quita una pieza: el prior hacia los pesos
+globales, las regiones (pesos globales, $K = 1$), las pertenencias suaves (regiones duras), o todo el aprendizaje de pesos
+(promedio simple). El stacking logístico es la alternativa clásica para combinar expertos.
+
+```{r val-14}
+# Ablación en Telco: RegionalMAPEM frente a cada variante (bloque A2 de la familia de Holm)
+A <- FAM |> filter(bloque == "A2_principal_ablacion")
+filas <- lapply(unique(A$modelo_b), function(rival) {
+  g <- A[A$modelo_b == rival, ]; t1 <- g[g$prueba == "T1", ][1, ]
+  data.frame(Variante = nombre(rival), `Diferencia de log-loss (original − variante)` = t1$dif_media,
+             `IC 95 % (BCa)` = sprintf("[%s; %s]", numero(t1$ic_bajo, 5), numero(t1$ic_alto, 5)),
+             `Pliegues en que gana el original` = sprintf("%d de 25", as.integer(t1$pliegues_gana)),
+             `δ de Cliff` = t1$cliff, Magnitud = t1$magnitud,
+             `p Holm (Nadeau-Bengio)` = t1$p_holm, `p Holm (permutación)` = g$p_holm[g$prueba == "T2"][1],
+             `p Holm (Wilcoxon)` = g$p_holm[g$prueba == "T4"][1], check.names = FALSE)
+})
+tabla(do.call(rbind, filas), "Tabla 6.5. Ablación de RegionalMAPEM en Telco", decimales = 5,
+      columnas_p = c("p Holm (Nadeau-Bengio)", "p Holm (permutación)", "p Holm (Wilcoxon)"))
+```
+
+La ablación es la parte más reveladora del capítulo:
+
+- **El prior importa.** Sin él, el modelo empeora en 22 de 25 pliegues y Wilcoxon lo confirma después de Holm. Es la
+  única pieza propia con un aporte medible, aunque pequeño (0,0004).
+- **Las regiones no aportan.** Los pesos globales ($K = 1$) son mejores en promedio por 0,0003 y ganan en 13 de 25
+  pliegues; ninguna prueba distingue entre ambos. Las regiones duras tampoco se distinguen de las suaves.
+- **Aprender los pesos sí sirve.** Frente al promedio simple, el modelo gana en 24 de 25 pliegues, con un efecto pequeño
+  pero significativo en dos pruebas.
+- **El stacking logístico empata.** La alternativa clásica rinde igual.
+
+En otras palabras, el valor del modelo en Telco está en combinar expertos calibrados con pesos aprendidos, no en hacerlo
+por regiones. El prior funciona como se diseñó: cuando las regiones no tienen nada que aportar, empuja los pesos de cada
+región hacia los globales y evita que el modelo pierda por sobreajuste. El capítulo 7 muestra la misma conclusión desde
+el estudio de sensibilidad.
+
+### Comparación bayesiana (exploratoria) {-}
+
+La prueba bayesiana de rangos con signo [@benavoli2017] no estaba entre las confirmatorias, pero contesta una pregunta que las pruebas
+frecuentistas no contestan: ¿qué tan probable es que los modelos sean prácticamente equivalentes? Usamos una región de
+equivalencia práctica (ROPE) de ±0,001 de log-loss.
+
+```{r val-16}
+# Probabilidades a posteriori con ROPE de 0,001 en log-loss (exploratorio)
+B <- leer_csv(file.path(TAB, "bayesiana_rope.csv")) |> filter(conjunto == "telco")
+B <- B[ordenar(B$p_equivalentes, B$rival, decreciente = TRUE,
+               c("mapem_regiones_duras", "stacking_logistico", "mapem_sin_prior", "mapem_K1", "logistic_splines", "lightgbm",
+                 "hist_gb", "knn", "svm", "xgboost", "random_forest", "decision_tree", "naive_bayes", "logistic", "catboost",
+                 "promedio_simple")), ]
+tabla(data.frame(Rival = nombre(B$rival), `P(original mejor)` = B$p_original_mejor,
+                 `P(equivalentes)` = B$p_equivalentes, `P(rival mejor)` = B$p_rival_mejor, check.names = FALSE),
+      "Tabla 6.6. Prueba bayesiana de rangos con signo en Telco (ROPE = 0,001)", decimales = 3)
+```
+
+Con la logística con splines, los pesos globales, el stacking y las demás variantes, la probabilidad de equivalencia
+práctica supera el 99 %. Frente a HistGB (0,90) y los siete benchmarks clásicos, el modelo propio es mejor con
+probabilidad alta; frente a LightGBM, lo más probable vuelve a ser la equivalencia (0,64). El empate con el mejor benchmark no es falta de potencia: los datos favorecen activamente la equivalencia.
+
+## Familia completa de comparaciones {-}
+
+La tabla 6.7 contiene las 223 comparaciones con su p crudo y su p ajustado por Holm. Incluye los benchmarks y la ablación
+en Telco, Friedman y Nemenyi, las métricas secundarias, el hold-out, los tres conjuntos adicionales y la prueba entre
+conjuntos. Se puede filtrar escribiendo en el buscador.
+
+```{r val-18}
+# Las 223 comparaciones; resumen por bloque y tabla completa
+BLOQUE <- c(A1_principal_benchmarks = "A1. Telco, frente a benchmarks", A2_principal_ablacion = "A2. Telco, ablación",
+            A3_principal_friedman = "A3. Telco, Friedman y Nemenyi", B_principal_secundarias = "B. Telco, F1 y AUC",
+            C_holdout = "C. Hold-out", D_adicionales = "D. Conjuntos adicionales", E_entre_conjuntos = "E. Entre conjuntos")
+res <- FAM |> group_by(bloque) |>
+  summarise(n = n(), calc = sum(calculada), rech = sum(p_holm < 0.05, na.rm = TRUE)) |> arrange(bloque)
+tabla(data.frame(Bloque = BLOQUE[res$bloque], Comparaciones = as.integer(res$n), Calculadas = as.integer(res$calc),
+                 `Rechazos con Holm (p < 0,05)` = as.integer(res$rech), check.names = FALSE),
+      "Tabla 6.7a. Familia de Holm por bloque", buscar = FALSE)
+tabla(data.frame(Id = FAM$id, Bloque = BLOQUE[FAM$bloque], Conjunto = unname(CONJUNTOS[FAM$dataset]),
+                 `Métrica` = unname(c(METRICA, rango_log_loss = "Rango de log-loss")[FAM$metrica]),
+                 Prueba = unname(c(NOMBRE_PRUEBA, T3_friedman = "Friedman (Iman-Davenport)", wilcoxon = "Wilcoxon entre conjuntos",
+                                   friedman_iman_davenport = "Friedman entre conjuntos")[FAM$prueba]),
+                 Rival = unname(c(NOMBRES, todos = "Todos")[FAM$modelo_b]), `Estadístico` = FAM$estadistico,
+                 `p crudo` = FAM$p_crudo, `p Holm` = FAM$p_holm, `δ de Cliff` = FAM$cliff, check.names = FALSE),
+      "Tabla 6.7b. Las 223 comparaciones de la familia confirmatoria", decimales = 4, columnas_p = c("p crudo", "p Holm"))
+```
+
+De las 223 comparaciones, 110 rechazan la hipótesis nula después de Holm. Casi todas son victorias del modelo propio
+frente a benchmarks individuales, en Telco y en los conjuntos adicionales. Ninguna es una victoria significativa frente
+al mejor benchmark de Telco, que es la que decide R3.
+
+La prueba entre conjuntos tiene una limitación de diseño que conviene decir con claridad: con solo cuatro conjuntos, el
+Wilcoxon por pares no puede bajar de p = 0,125, aun si el modelo gana en los cuatro. Por eso ninguna de esas once
+comparaciones rechaza, aunque el modelo propio tiene menor log-loss medio que la mayoría de los benchmarks en los cuatro
+conjuntos. Friedman entre conjuntos sí rechaza la igualdad global (p de Holm = 6 × 10⁻⁵).
+
+## Veredicto sobre R3 {-}
+
+La definición operativa de superioridad exige cuatro condiciones a la vez.
+
+```{r val-20}
+# Las cuatro condiciones de R3 (sección 9 del protocolo)
+h2 <- VEREDICTO$H2
+ganados <- sum(vapply(h2, function(v) v$mejor_en_media, logical(1)))
+peores <- sum(vapply(h2, function(v) v$significativamente_peor, logical(1)))
+tabla(data.frame(
+  `Condición` = c("1. Log-loss medio menor que el del mejor benchmark y el de cada modelo base",
+                  "2. Al menos tres pruebas distintas rechazan H0 con Holm",
+                  "3. |δ de Cliff| ≥ 0,147 a favor del modelo propio",
+                  "4. Mejor en media en al menos 2 de los 3 conjuntos adicionales y nunca significativamente peor"),
+  Resultado = c(sprintf("%s frente a %s (%s)", numero(VEREDICTO$log_loss_original, 5), numero(VEREDICTO$log_loss_mejor_benchmark, 5), nombre(MEJOR)),
+                sprintf("%d de 4 (Nadeau-Bengio, permutación, Wilcoxon, Nemenyi)", sum(unlist(VEREDICTO$rechazos))),
+                paste("δ =", numero(VEREDICTO$cliff, 3)),
+                sprintf("mejor en %d de 3; significativamente peor en %d", ganados, peores)),
+  `¿Se cumple?` = c(VEREDICTO$condicion_1, VEREDICTO$condicion_2, VEREDICTO$condicion_3, VEREDICTO$condicion_4),
+  check.names = FALSE), "Tabla 6.8. Condiciones de superioridad (R3)", buscar = FALSE)
+nota(paste0("<b>R3 ", if (VEREDICTO$R3) "alcanzado" else "no alcanzado", ".</b> Solo se cumple la condición 1, por un margen ",
+            "de 0,00003 que ninguna prueba distingue del azar."), if (VEREDICTO$R3) "ok" else "warn")
+```
+
+El modelo propio no supera al mejor benchmark. Tampoco pierde: en ningún conjunto es significativamente peor que el
+mejor benchmark de ese conjunto, y en todos supera con claridad a buena parte de los modelos individuales. Pero la
+superioridad que pide R3 exige más que un empate favorable.
+
+La causa probable no es falta de potencia ni de presupuesto. Los 25 pliegues bastan para detectar diferencias de 0,0004
+(como la del prior), y la prueba bayesiana favorece la equivalencia con más del 99 % de probabilidad. La explicación está
+en la ablación y en la sensibilidad: en Telco, la fiabilidad relativa de los expertos casi no cambia entre tipos de
+cliente, así que dividir en regiones no deja nada que aprovechar. Con un único vector de pesos, el modelo se reduce a un
+buen ensamble ponderado, y ese ensamble rinde lo mismo que la logística con splines, que ya captura la mayor parte de la
+señal disponible en este conjunto. El capítulo 9 retoma esta discusión.

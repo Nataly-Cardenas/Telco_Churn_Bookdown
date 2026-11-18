@@ -1,0 +1,235 @@
+# Reproducibilidad y bibliografía {#reproducibilidad -}
+
+Todo lo que reporta este libro se puede reconstruir desde el repositorio. Este capítulo reúne lo necesario para hacerlo:
+el entorno, las semillas, los espacios de búsqueda, la tabla maestra de experimentos, el tiempo de cómputo y la lista de
+verificación. Los notebooks del libro no reentrenan modelos: leen resultados versionados en
+`experiments/resultados/tablas/`, que a su vez salen de los scripts de `experiments/confirmatorio/`.
+
+## Cómo reproducir los resultados {-}
+
+| Paso | Comando | Produce | Tiempo de reloj medido |
+|---|---|---|---|
+| 1. Validación anidada de los 4 conjuntos | `bash experiments/confirmatorio/correr_con_reintentos.sh 10` | `resultados/crudos/` (1020 checkpoints) | ≈ 31 h, incluida la caída de D1 |
+| 2. Combinaciones del dashboard, robustez y tenure | `bash experiments/confirmatorio/correr_etapas_post.sh 10` | `tablas/combinaciones_dashboard.csv`, `resultados/robustez/`, `crudos/telco_tenure/` | 1 min, 53 min y 20 min |
+| 3. Análisis confirmatorio y sello | `python experiments/confirmatorio/analizar.py` y `sellar_pre_holdout.py` | `tablas/*.csv`, `sello_pre_holdout.json` | 2,5 min |
+| 4. Hold-out, análisis final, escalabilidad y SHAP | `bash experiments/confirmatorio/correr_etapas_post.sh 10 final` | `crudos/telco_holdout/`, `tablas/` completas | 18, 2,5, 4 y 24 min |
+| 5. Tablas livianas del libro | `python experiments/confirmatorio/derivar_tablas_libro.py` (y `conjuntos`) | `tablas/libro/` | 5 min |
+| 6. Capítulos 6, 7 y 10 | `python experiments/confirmatorio/construir_capitulos.py` | notebooks con sus salidas | 2 min |
+| 7. Libro | `jupyter-book build .` | `_build/html` | 2 min |
+
+Los checkpoints crudos (unos 115 MB) no se versionan; todo lo demás sí. Cada tarea guarda su checkpoint al terminar,
+así que una corrida interrumpida se reanuda sin repetir trabajo. Con las semillas fijas, una corrida nueva produce los
+mismos números: repetimos tres tareas al azar y coincidieron bit a bit con sus checkpoints (desviación D1).
+
+```{r rep-02}
+# Entorno de software con el que se corrieron los experimentos (entorno conda ml_project, Python)
+source("R/presentacion.R")
+TAB <- file.path("experiments", "resultados", "tablas")
+entorno <- leer_csv(file.path("experiments", "entorno_experimentos.csv"), colClasses = "character")
+tabla(entorno, "Tabla 10.1. Versiones del software (entorno conda ml_project)", buscar = FALSE,
+      nota = "requirements.txt fija estas mismas versiones; requirements-book.txt, las del libro (jupyter-book 0.15.1).")
+```
+
+**Hardware.** Portátil con Intel Core Ultra 5 125H (14 núcleos, 18 hilos lógicos, mezcla de núcleos de rendimiento y de
+eficiencia), 7,5 GB de RAM utilizable, disco SSD de 512 GB y Windows 11 Home, sin GPU dedicada. Cada tarea corrió en un
+proceso con un solo hilo por modelo, con 10 procesos en paralelo. Los tiempos de la tabla 6.1 dependen de esta máquina;
+los resultados numéricos no.
+
+## Semillas {-}
+
+Todas las semillas salen de una sola raíz, 42, combinada con el papel que cumple cada una y con sus coordenadas
+(repetición, pliegue, modelo) mediante `numpy.random.SeedSequence`. Así ninguna semilla se reutiliza por accidente entre
+papeles distintos, y cualquiera se puede recalcular.
+
+```{r rep-04}
+# Derivación de semillas: seed_for(papel, *coordenadas) = SeedSequence([42, código del papel, *coordenadas])
+# Implementación en R del algoritmo SeedSequence de numpy (aritmética de 32 bits sin signo).
+M32 <- 2^32
+mult32 <- function(a, b) {                     # (a · b) mod 2^32 sin perder precisión
+  b_alto <- b %/% 65536; b_bajo <- b %% 65536
+  (((a * b_alto) %% 65536) * 65536 + a * b_bajo) %% M32
+}
+xor32 <- function(a, b) {
+  alto <- bitwXor(as.integer(a %/% 65536), as.integer(b %/% 65536))
+  bajo <- bitwXor(as.integer(a %% 65536), as.integer(b %% 65536))
+  alto * 65536 + bajo
+}
+seed_sequence <- function(entropia, n_palabras = 1, tam_pool = 4) {
+  INIT_A <- 0x43b0d7e5; MULT_A <- 0x931e8875; INIT_B <- 0x8b51f9dd; MULT_B <- 0x58f38ded
+  MIX_L <- 0xca01f9dd; MIX_R <- 0x4973f715
+  const <- INIT_A
+  hashmix <- function(valor) {
+    valor <- xor32(valor, const); const <<- mult32(const, MULT_A)
+    valor <- mult32(valor, const); xor32(valor, valor %/% 65536)
+  }
+  mezcla <- function(x, y) {
+    r <- (mult32(MIX_L, x) - mult32(MIX_R, y)) %% M32
+    xor32(r, r %/% 65536)
+  }
+  pool <- vapply(seq_len(tam_pool), function(i) hashmix(if (i <= length(entropia)) entropia[i] else 0), numeric(1))
+  for (o in seq_len(tam_pool)) for (d in seq_len(tam_pool)) if (o != d) pool[d] <- mezcla(pool[d], hashmix(pool[o]))
+  if (length(entropia) > tam_pool) for (o in (tam_pool + 1):length(entropia)) for (d in seq_len(tam_pool))
+    pool[d] <- mezcla(pool[d], hashmix(entropia[o]))
+  const <- INIT_B
+  vapply(seq_len(n_palabras), function(i) {
+    v <- xor32(pool[(i - 1) %% tam_pool + 1], const); const <<- mult32(const, MULT_B)
+    v <- mult32(v, const); xor32(v, v %/% 65536)
+  }, numeric(1))
+}
+SEED_ROLES <- c(subset = 11, outer = 23, inner = 37, sampler = 41, model = 53, calibration = 67, test = 79, optimizer = 83)
+seed_for <- function(papel, ...) seed_sequence(c(42, SEED_ROLES[[papel]], c(...)))
+uso <- c(subset = "Submuestra fija de KDDCup09", outer = "Pliegues externos, por repetición", inner = "Pliegues internos, por repetición y pliegue",
+         sampler = "Remuestreo (sin uso en este protocolo)", model = "Semilla de cada modelo, por repetición, pliegue y modelo",
+         calibration = "Calibración (sin uso: Platt es determinista)", test = "Permutaciones, bootstrap, SHAP y perturbaciones de robustez",
+         optimizer = "Muestreador TPE de Optuna, por repetición, pliegue y modelo")
+tabla(data.frame(Papel = names(SEED_ROLES), `Código` = as.integer(SEED_ROLES), Uso = unname(uso[names(SEED_ROLES)]),
+                 Ejemplo = sprintf("seed_for('%s', 0, 0) = %s", names(SEED_ROLES),
+                                   vapply(names(SEED_ROLES), function(k) format(seed_for(k, 0, 0), scientific = FALSE), character(1))),
+                 check.names = FALSE),
+      "Tabla 10.2. Papeles de las semillas", buscar = FALSE)
+```
+
+## Espacios de búsqueda {-}
+
+Los rangos quedaron fijados en `experiments/espacios.json` antes del tag. Cada modelo arranca en sus valores
+recomendados por la literatura o por su librería, que cuentan como la primera de las 30 evaluaciones.
+
+```{r rep-06}
+# Rangos de hiperparámetros de cada modelo, con el punto de partida
+ESP <- jsonlite::fromJSON(file.path("experiments", "espacios.json"), simplifyVector = FALSE)
+texto_py <- function(v) {                      # misma representación de texto que str() de Python
+  if (is.null(v)) return("None")
+  if (is.logical(v)) return(if (v) "True" else "False")
+  if (is.character(v)) return(v)
+  if (is.integer(v)) return(as.character(v))
+  digitos <- which(vapply(1:17, function(d) as.numeric(sprintf(paste0("%.", d, "g"), v)) == v, logical(1)))[1]
+  exponente <- floor(log10(abs(v)))
+  if (v != 0 && (exponente < -4 || exponente >= 16)) {
+    s <- sprintf(paste0("%.", digitos - 1, "e"), v)
+  } else {
+    s <- sprintf(paste0("%.", max(0, digitos - 1 - exponente), "f"), v)
+    if (!grepl(".", s, fixed = TRUE)) s <- paste0(s, ".0")
+  }
+  s
+}
+# numero(...) sin ceros finales, tal como se generó la tabla en el Jupyter Book
+sin_ceros <- function(x) sub(",$", "", sub("0+$", "", numero(x, 4)))
+rango <- function(e) {
+  if (e$tipo == "categorical") return(paste(vapply(e$valores, texto_py, character(1)), collapse = " | "))
+  escala <- if (e$tipo %in% c("log", "int_log")) " (log)" else ""
+  paste0(sin_ceros(e$low), " a ", sin_ceros(e$high), escala)
+}
+filas <- list()
+for (m in names(ESP$benchmarks)) {
+  d <- ESP$benchmarks[[m]]
+  for (p in names(d$espacio)) filas[[length(filas) + 1]] <- data.frame(
+    Modelo = nombre(m), `Hiperparámetro` = p, Rango = rango(d$espacio[[p]]),
+    Inicio = if (p %in% names(d$inicio)) texto_py(d$inicio[[p]]) else "—", check.names = FALSE)
+}
+mo <- ESP$modelo_original$RegionalMAPEM
+for (p in names(mo$espacio)) filas[[length(filas) + 1]] <- data.frame(
+  Modelo = "RegionalMAPEM", `Hiperparámetro` = p, Rango = rango(mo$espacio[[p]]),
+  Inicio = if (p %in% names(mo$inicio)) texto_py(mo$inicio[[p]]) else "—", check.names = FALSE)
+tabla(do.call(rbind, filas), "Tabla 10.3. Espacios de búsqueda (30 evaluaciones de TPE por modelo y pliegue externo)", decimales = 4)
+```
+
+## Tabla maestra de experimentos {-}
+
+La tabla maestra reúne, para cada conjunto y cada modelo, cuántas veces se ajustó, con qué presupuesto, cuánto costó y
+qué resultado dio, como media y desviación estándar sobre los pliegues externos. Se guarda también como
+`experiments/resultados/tablas/tabla_maestra_experimentos.csv`, que además incluye las 112 configuraciones del entregable
+anterior (modelo, balanceo y optimizador) con sus métricas externas y tiempos; el detalle por pliegue y las semillas de cada
+una están en `resultados_modelado/analisis_final/unidades.csv`.
+
+```{r rep-08}
+# Tabla maestra: una fila por conjunto y modelo (se guarda en experiments/resultados/tablas/tabla_maestra_experimentos.csv)
+POR_PLIEGUE <- leer_csv(file.path(TAB, "metricas_por_pliegue.csv"))
+COSTOS <- leer_csv(file.path(TAB, "costos_por_pliegue.csv"))
+ag <- POR_PLIEGUE |> group_by(conjunto, modelo) |>
+  summarise(pliegues = n(), repeticiones = n_distinct(rep), log_loss_media = mean(log_loss), log_loss_de = sd(log_loss),
+            f1_media = mean(f1), f1_de = sd(f1), auc_media = mean(auc), auc_de = sd(auc), brier_media = mean(brier),
+            ece_media = mean(ece), .groups = "drop")
+co <- COSTOS |> group_by(conjunto, modelo) |>
+  summarise(evaluaciones_totales = sum(ensayos), evaluaciones_fallidas = sum(fallidos), horas_busqueda = sum(seg_busqueda) / 3600,
+            seg_ajuste_medio = mean(seg_ajuste), .groups = "drop")
+M <- left_join(ag, co, by = c("conjunto", "modelo")) |> arrange(conjunto, modelo)
+# como en pandas, al unir con filas sin costos los conteos pasan a ser números decimales
+M <- M |> mutate(across(c(evaluaciones_totales, evaluaciones_fallidas), as.numeric))
+tabla(data.frame(Conjunto = unname(CONJUNTOS[M$conjunto]), Modelo = nombre(M$modelo), `Pliegues externos` = as.integer(M$pliegues),
+                 `Evaluaciones de hiperparámetros` = M$evaluaciones_totales, Fallidas = M$evaluaciones_fallidas,
+                 `Horas de búsqueda` = M$horas_busqueda, `Log-loss` = media_de(M$log_loss_media, M$log_loss_de, 4),
+                 F1 = media_de(M$f1_media, M$f1_de, 3), AUC = media_de(M$auc_media, M$auc_de, 3), check.names = FALSE),
+      sprintf("Tabla 10.4. Tabla maestra de experimentos (%d filas)", nrow(M)), decimales = 2,
+      nota = "Las variantes sin búsqueda (promedio simple, pesos globales) no consumen evaluaciones. Las horas son de proceso, no de reloj.")
+```
+
+## Tiempo de cómputo {-}
+
+```{r rep-10}
+# Horas de proceso por conjunto (suma de búsqueda, ajuste y predicción de todos los modelos)
+h <- tapply((COSTOS$seg_busqueda + COSTOS$seg_ajuste + COSTOS$seg_pred_por_1000 * 0) / 3600, COSTOS$conjunto, sum)
+reloj <- c(telco = "2,4 h (más 1,1 h del intento con 16 procesos)", uci_563_iranian = "3,5 h", openml_40701_churn = "5,6 h",
+           openml_1112_kddcup09_churn = "19,6 h")
+tabla(data.frame(Conjunto = unname(CONJUNTOS[names(reloj)]), `Horas de proceso` = unname(h[names(reloj)]),
+                 `Tiempo de reloj con 10 procesos` = unname(reloj), check.names = FALSE),
+      "Tabla 10.5. Costo de la validación anidada", decimales = 1, buscar = FALSE)
+```
+
+KDDCup09 se llevó casi el 60 % del cómputo (166 de 281 horas de proceso) con solo 10 de los 85 pliegues externos: sus 908 columnas tras el
+preprocesamiento encarecen sobre todo a Random Forest, CatBoost y HistGB.
+
+## Lista de verificación de reproducibilidad {-}
+
+| Elemento | Dónde está |
+|---|---|
+| Versiones del software y del hardware | Tabla 10.1 y párrafo de hardware; `requirements.txt` |
+| Semillas | Tabla 10.2; `seed_for` en `experiments/confirmatorio/comun.py` |
+| Rangos de hiperparámetros | Tabla 10.3; `experiments/espacios.json` |
+| Número de ejecuciones | 5 × 5 pliegues externos (2 × 5 en KDDCup09), 3 internos, 30 evaluaciones; tabla 10.4 |
+| Medidas de dispersión | Desviación estándar e IC BCa en las tablas 6.2 y 10.4; semillas y repeticiones en la tabla 7.5 |
+| Protocolo y desviaciones | `experiments/protocolo.md`, tag `protocolo-v1`, sección 12 |
+| Familia de pruebas | `experiments/familia_holm.json` (223 comparaciones) |
+| Datos | Telco: `WA_Fn-UseC_-Telco-Customer-Churn.csv` con `train_index.csv` y `test_index.csv`; adicionales en `experiments/datos/` |
+| Código del modelo | `src/original_model.py`, con pruebas en `tests/test_original_model.py` |
+| Código de los experimentos | `experiments/confirmatorio/` |
+| Resultados | `experiments/resultados/tablas/` y `tablas_pre_holdout/` con su sello SHA-256 |
+| Tiempo de cómputo | Tablas 6.1, 7.8 y 10.5 |
+| Repositorio | [github.com/Nataly-Cardenas/Telco_Churn_JBook](https://github.com/Nataly-Cardenas/Telco_Churn_JBook), licencia MIT |
+| Archivo permanente | Zenodo, DOI [10.5281/zenodo.24268653](https://doi.org/10.5281/zenodo.24268653) (release `v1.0.0`) |
+
+## Entregables y cita {-}
+
+La versión definitiva está archivada en Zenodo con el DOI [10.5281/zenodo.24268653](https://doi.org/10.5281/zenodo.24268653). Ese DOI apunta siempre a la última
+versión publicada del repositorio. Los entregables son:
+
+| Entregable | Dónde está |
+|---|---|
+| Libro (Jupyter Book) | [nataly-cardenas.github.io/Telco_Churn_JBook](https://nataly-cardenas.github.io/Telco_Churn_JBook/) |
+| Paper RegionalMAPEM | `paper/paper_regionalmapem.pdf`, con su fuente en `paper/paper_regionalmapem.tex`; paper del entregable anterior en `paper/paper.pdf` |
+| Código, datos y resultados | [github.com/Nataly-Cardenas/Telco_Churn_JBook](https://github.com/Nataly-Cardenas/Telco_Churn_JBook) |
+| Dashboard | [telco-churn-dashboard-hom3.onrender.com](https://telco-churn-dashboard-hom3.onrender.com/), código en [Dash_Telco_Churn_ML](https://github.com/lauraformore/Dash_Telco_Churn_ML) |
+| Ficha del modelo y declaración de datos | `MODEL_CARD.md` y `DATA_STATEMENT.md` |
+| Archivo permanente | [doi.org/10.5281/zenodo.24268653](https://doi.org/10.5281/zenodo.24268653) |
+
+Para citar el trabajo: Rivera Figueredo, L. S. y Cárdenas Izaquita, N. A. (2026). *Predicción de abandono de clientes
+en Telco Customer Churn y modelo RegionalMAPEM* (v1.0.0) [Software]. Zenodo. https://doi.org/10.5281/zenodo.24268653
+
+## Declaración de autoría y uso de herramientas {-}
+
+Laura S. Rivera Figueredo y Natalý A. Cárdenas Izaquita somos las autoras de este proyecto. Decidimos el problema,
+la hipótesis, el modelo, el protocolo y las conclusiones, y respondemos por todo su contenido.
+
+Durante el proyecto usamos Claude (Anthropic), a través de Claude Code, como asistente de programación y redacción. Lo
+usamos para escribir y revisar código de los scripts de experimentación y análisis estadístico, la clase del modelo y
+sus pruebas, para auditar tiempos de cómputo y la coherencia entre el protocolo y lo ejecutado, y para redactar
+borradores de varios capítulos a partir de los resultados. Todas sus propuestas pasaron por nuestra revisión. Los
+resultados numéricos salen de la ejecución del código del repositorio, no de la herramienta, y ninguna cifra del libro
+se escribió sin verificarla contra las tablas versionadas. La herramienta no tuvo acceso al hold-out antes de su
+evaluación única, que se hizo después de sellar el análisis confirmatorio.
+Además, usamos Claude (Anthropic), como herramienta de apoyo científico, para una validación breve del manuscrito y de la investigación bibliográfica: contrastar el texto con las tablas versionadas y localizar y verificar referencias. Los hallazgos se comprobaron contra las fuentes antes de incorporarlos. Este trabajo no recibió ningún tipo de financiación.
+
+Firmado por el equipo: **Laura S. Rivera Figueredo** y **Natalý A. Cárdenas Izaquita**.
+
+## Referencias {-}
+
+<div id="refs"></div>

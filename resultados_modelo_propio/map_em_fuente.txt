@@ -1,0 +1,70 @@
+def map_em(Lik, R, alpha, max_iter=2000, tol=1e-8):
+    """MAP-EM de los pesos por región. Lik: n x M verosimilitudes de los expertos; R: n x K.
+
+    Paso E: q_ikm = r_ik pi_km l_im / sum_{k',m'} r_ik' pi_k'm' l_im'
+    Paso M: pi_km = (sum_i q_ikm + alpha_km - 1) / (sum_i sum_m q_ikm + sum_m (alpha_km - 1))
+    Devuelve (pi, historial de F, convergió).
+    """
+    K, M = R.shape[1], Lik.shape[1]
+    pi = np.full((K, M), 1.0 / M)
+    hist = [log_posterior(pi, Lik, R, alpha)]
+    for _ in range(max_iter):
+        mix = R[:, :, None] * pi[None] * Lik[:, None, :]
+        q = mix / mix.sum(axis=(1, 2))[:, None, None]
+        num = q.sum(axis=0) + alpha - 1
+        pi = np.clip(num / num.sum(axis=1, keepdims=True), 1e-300, None)
+        hist.append(log_posterior(pi, Lik, R, alpha))
+        if hist[-1] - hist[-2] <= tol * (1 + abs(hist[-2])):
+            return pi, np.array(hist), True
+    return pi, np.array(hist), False
+
+    def fit(self, X, y):
+        X, y = check_X_y(X, y)
+        self.classes_ = np.unique(y)
+        if len(self.classes_) != 2:
+            raise ValueError("RegionalMAPEM solo admite clasificación binaria.")
+        if self.n_regions < 1 or self.prior_strength < 0:
+            raise ValueError("n_regions debe ser >= 1 y prior_strength >= 0.")
+        if self.covariance not in ("full", "diag"):
+            raise ValueError("covariance debe ser 'full' o 'diag'.")
+        yb = (y == self.classes_[1]).astype(int)
+        rng = np.random.default_rng(self.random_state)
+        experts = self.experts if self.experts is not None else _default_experts(self.random_state)
+        M = len(experts)
+
+        # 1) predicciones fuera de pliegue de cada experto (sin fuga) y expertos finales
+        oof = np.zeros((len(yb), M))
+        skf = StratifiedKFold(self.inner_cv, shuffle=True, random_state=self.random_state)
+        for a, b in skf.split(X, yb):
+            for m, (_, est) in enumerate(experts):
+                oof[b, m] = self._make(est).fit(X[a], yb[a]).predict_proba(X[b])[:, 1]
+        self.experts_ = [self._make(est).fit(X, yb) for _, est in experts]
+        P = np.clip(oof, EPS, 1 - EPS)
+        Lik = np.where(yb[:, None] == 1, P, 1 - P)
+
+        # 2) regiones (protocolo, sección 6): columnas continuas -> cuantiles normales -> PCA -> GMM propios
+        cols = self.region_columns
+        if cols is None:
+            cols = [j for j in range(X.shape[1]) if len(np.unique(X[:, j])) > 2]
+        if len(cols) == 0:
+            raise ValueError("No hay columnas continuas para definir las regiones; indique region_columns.")
+        self.region_columns_ = list(cols)
+        self.scores_ = _normal_scores_fit(X[:, self.region_columns_])
+        U = _normal_scores(X[:, self.region_columns_], self.scores_)
+        self.pca_mean_, self.pca_components_ = _pca_fit(U, min(self.n_pca, U.shape[1]))
+        Z = (U - self.pca_mean_) @ self.pca_components_.T
+        self.z_mean_, self.z_std_ = Z.mean(0), Z.std(0) + 1e-12
+        if self.n_regions > 1:
+            self.gmm_ = _gmm_fit((Z - self.z_mean_) / self.z_std_, self.n_regions, rng, covariance=self.covariance)
+        R = self._regions(X)
+        self.oof_proba_, self.train_regions_ = P, R          # diagnóstico: OOF de expertos y regiones
+
+        # 3) pesos globales g (EM, K = 1, sin prior) y pesos por región (MAP-EM)
+        g, _, _ = map_em(Lik, np.ones((len(yb), 1)), np.ones((1, M)), self.max_iter, self.tol)
+        self.global_weights_ = g[0]
+        self.alpha_ = 1 + self.prior_strength * np.tile(self.global_weights_, (R.shape[1], 1))
+        self.weights_, self.history_, self.converged_ = map_em(Lik, R, self.alpha_, self.max_iter, self.tol)
+        self.n_iter_ = len(self.history_) - 1
+        self.expert_names_ = [n for n, _ in experts]
+        return self
+

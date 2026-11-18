@@ -1,6 +1,6 @@
 # Telco Customer Churn — Bookdown
 
-Versión en Bookdown (R) del Jupyter Book [Telco_Churn_JBook](https://nataly-cardenas.github.io/Telco_Churn_Bookdown/eda.html). El libro tiene el mismo contenido, las mismas secciones, interpretaciones y el mismo diseño (incluido el modo oscuro por defecto). El código de los capítulos está escrito en R y se muestra plegado con "Show code cell source"; al construir el libro, ese código se ejecuta y genera todas las tablas y gráficas.
+Versión en Bookdown (R) del Jupyter Book [Telco_Churn_JBook](https://nataly-cardenas.github.io/Telco_Churn_JBook/). El libro tiene el mismo contenido, las mismas secciones, interpretaciones y el mismo diseño (incluido el modo oscuro por defecto). El código de los capítulos está escrito en R y se muestra plegado con "Show code cell source"; al construir el libro, ese código se ejecuta y genera todas las tablas y gráficas.
 
 ## Estructura
 
@@ -8,25 +8,39 @@ Versión en Bookdown (R) del Jupyter Book [Telco_Churn_JBook](https://nataly-car
 Telco_Churn_Bookdown/
 │
 ├── .github/workflows/book.yml   # Construye el libro y lo publica en GitHub Pages al actualizar main
-├── index.Rmd                    # Portada e introducción
-├── 01-eda.Rmd                   # Análisis exploratorio de datos
-├── 02-preprocesamiento.Rmd      # Preprocesamiento de datos
-├── 03-modelado-avanzado.Rmd     # Modelamiento avanzado
-├── 04-codigo-experimento.Rmd    # Apéndice: código del entrenamiento de las 112 configuraciones
-├── 05-paper.Rmd                 # Paper
-├── 06-guia-repositorio.Rmd      # Guía del repositorio
+├── index.Rmd                    # Portada, resumen ejecutivo e introducción
+├── 01-correcciones.Rmd          # Trazabilidad de correcciones
+├── 02-eda.Rmd                   # Análisis exploratorio de datos
+├── 03-preprocesamiento.Rmd      # Preprocesamiento de datos
+├── 04-modelado-avanzado.Rmd     # Modelamiento avanzado
+├── 05-literatura.Rmd            # Revisión de literatura y novedad
+├── 06-modelo-propio.Rmd         # Modelo propio: ponderación por regiones con MAP-EM
+├── 07-validacion.Rmd            # Protocolo y validación estadística
+├── 08-evaluacion-ampliada.Rmd   # Evaluación ampliada y robustez
+├── 09-dashboard.Rmd             # Dashboard y despliegue
+├── 10-conclusiones.Rmd          # Conclusiones y limitaciones
+├── 11-reproducibilidad.Rmd      # Reproducibilidad y bibliografía
+├── 12-codigo-experimento.Rmd    # Apéndice: código del entrenamiento de las 112 configuraciones
+├── 13-paper.Rmd                 # Paper
+├── 14-guia-repositorio.Rmd      # Guía del repositorio
 ├── R/salidas.R                  # Opciones de knitr (ejecución del código) y código plegable
 ├── R/estilos.R                  # Estilos, barra superior y pie de página del libro
+├── R/presentacion.R             # Tablas, notas y estilo de figuras de los capítulos 4 a 10
 ├── R/complementos/              # Calibración isotónica, Successive Halving y optimización computacional
 ├── WA_Fn-UseC_-Telco-Customer-Churn.csv   # Datos originales (Telco Customer Churn, IBM)
 ├── train_index.csv, test_index.csv       # Índices de la partición 80/20 del proyecto
 ├── resultados_modelado/         # Resultados guardados del experimento de 112 configuraciones
-├── Imagenes/, paper/            # Logo, favicon, PDF y figuras del paper
+├── experiments/                 # Tablas versionadas del protocolo confirmatorio y de la revisión de literatura
+├── resultados_modelo_propio/    # Salidas guardadas del capítulo del modelo propio
+├── references.bib               # Bibliografía de los capítulos 4 a 10
+├── Imagenes/, paper/            # Logo, favicon, capturas del dashboard, PDF y figuras de los papers
 ├── _bookdown.yml, _output.yml   # Configuración de Bookdown
 └── construir_libro.R            # Construye el libro en _book/
 ```
 
 Al construir el libro se ejecuta el código R de cada capítulo. El EDA y el preprocesamiento parten del CSV original. El modelado avanzado trabaja sobre los resultados guardados del experimento en `resultados_modelado/` (las 112 configuraciones con validación cruzada anidada tardan varios días en entrenarse, por eso no se vuelven a entrenar en cada construcción).
+
+Los capítulos 4 a 10 (literatura, modelo propio, validación, evaluación ampliada, dashboard, conclusiones y reproducibilidad) leen las tablas versionadas de `experiments/` y `resultados_modelo_propio/`, que son los mismos resultados del Jupyter Book: el código R genera con ellas todas las tablas y gráficas.
 
 El apéndice del código del experimento reproduce tal cual, igual que en el Jupyter Book, las celdas originales que entrenaron las 112 configuraciones (guardadas en `source_snapshot.json`); sus celdas no se ejecutan al construir el libro.
 

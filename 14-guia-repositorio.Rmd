@@ -3,12 +3,13 @@
 [![R 4.4](https://img.shields.io/badge/R-4.4-276DC3?style=for-the-badge&logo=r&logoColor=white)](https://www.r-project.org/)
 [![Bookdown](https://img.shields.io/badge/Bookdown-bs4__book-1B4F72?style=for-the-badge&logo=rstudioide&logoColor=white)](https://nataly-cardenas.github.io/Telco_Churn_Bookdown/)
 [![Dataset](https://img.shields.io/badge/Dataset-Kaggle-20BEFF?style=for-the-badge&logo=kaggle&logoColor=white)](https://www.kaggle.com/datasets/blastchar/telco-customer-churn)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24268653.svg)](https://doi.org/10.5281/zenodo.24268653)
 
 > Resumen del proyecto: este proyecto predice el abandono de clientes (*churn*) de una empresa de telecomunicaciones a partir del conjunto público Telco Customer Churn de IBM (7,043 clientes, 21 columnas y 26.5 % de abandono). El flujo abarca la limpieza y transformación de los datos (ETL), un análisis exploratorio realizado solo sobre el conjunto de entrenamiento, un preprocesamiento sin fuga de información y un diseño experimental de 112 configuraciones: 7 modelos × 4 técnicas de balanceo × 4 métodos de optimización de hiperparámetros, evaluadas con validación cruzada anidada (5 folds externos × 3 internos).
 >
 > Resultados: Random Forest y XGBoost con SMOTE alcanzan el mayor F1 de la clase de abandono (0.638), seguidos de la regresión logística (0.634), sin diferencias estadísticamente detectables entre ellos. El balanceo con SMOTE es el factor que más mejora el desempeño, y el tipo de contrato, el servicio de internet y la antigüedad son las variables más influyentes según SHAP.
 
-📖 Libro en línea: <https://nataly-cardenas.github.io/Telco_Churn_Bookdown/>
+Libro en línea: <https://nataly-cardenas.github.io/Telco_Churn_Bookdown/>
 
 ---
 
@@ -60,24 +61,36 @@ Se necesita R 4.4 o superior. RStudio ya incluye Pandoc; si no se usa RStudio, h
 Telco_Churn_Bookdown/
 │
 ├── .github/workflows/book.yml   # Construye el libro y lo publica en GitHub Pages
-├── Imagenes/                    # Logo y favicon del libro
-├── paper/                       # Paper (PDF) y sus figuras
-├── resultados_modelado/         # Artefactos de los experimentos (ver abajo)
+├── Imagenes/                    # Logo, favicon, capturas del dashboard y figuras del modelo propio
+├── paper/                       # Papers (PDF) y sus figuras
+├── resultados_modelado/         # Artefactos de los experimentos del entregable anterior (ver abajo)
+├── resultados_modelo_propio/    # Salidas guardadas del capítulo del modelo propio (RegionalMAPEM)
+├── experiments/                 # Tablas versionadas del protocolo confirmatorio y de la revisión de literatura
+├── references.bib               # Bibliografía de los capítulos 4 a 10
 │
 ├── R/salidas.R                  # Opciones de knitr: ejecuta el código y lo pliega ("Show code cell source")
 ├── R/estilos.R                  # Estilos, barra superior y pie de página del libro
+├── R/presentacion.R             # Tablas, notas y estilo de figuras de los capítulos 4 a 10
 ├── R/complementos/              # Calibración isotónica, multifidelidad y optimización computacional
 │
 ├── WA_Fn-UseC_-Telco-Customer-Churn.csv   # Datos originales (IBM)
 ├── train_index.csv / test_index.csv       # Partición 80/20
 │
-├── index.Rmd                    # Portada, introducción y marco teórico
-├── 01-eda.Rmd                   # Análisis exploratorio
-├── 02-preprocesamiento.Rmd      # Preprocesamiento y modelo base
-├── 03-modelado-avanzado.Rmd     # Experimentos, resultados e interpretación
-├── 04-codigo-experimento.Rmd    # Apéndice: código del entrenamiento de las 112 configuraciones
-├── 05-paper.Rmd                 # Versión web del paper
-├── 06-guia-repositorio.Rmd      # Esta guía
+├── index.Rmd                    # Portada, resumen ejecutivo, introducción y marco teórico
+├── 01-correcciones.Rmd          # Trazabilidad de correcciones
+├── 02-eda.Rmd                   # Análisis exploratorio
+├── 03-preprocesamiento.Rmd      # Preprocesamiento y modelo base
+├── 04-modelado-avanzado.Rmd     # Experimentos, resultados e interpretación
+├── 05-literatura.Rmd            # Revisión de literatura y novedad
+├── 06-modelo-propio.Rmd         # Modelo propio: ponderación por regiones con MAP-EM
+├── 07-validacion.Rmd            # Protocolo y validación estadística
+├── 08-evaluacion-ampliada.Rmd   # Evaluación ampliada y robustez
+├── 09-dashboard.Rmd             # Dashboard y despliegue
+├── 10-conclusiones.Rmd          # Conclusiones y limitaciones
+├── 11-reproducibilidad.Rmd      # Reproducibilidad y bibliografía
+├── 12-codigo-experimento.Rmd    # Apéndice: código del entrenamiento de las 112 configuraciones
+├── 13-paper.Rmd                 # Versión web del paper
+├── 14-guia-repositorio.Rmd      # Esta guía
 │
 ├── _bookdown.yml / _output.yml  # Configuración e índice del libro
 ├── construir_libro.R            # Construye el libro en _book/
@@ -92,10 +105,12 @@ Los capítulos se ejecutan en este orden al construir el libro; cada uno usa los
 
 | Capítulo | Contenido | Archivos que genera |
 |---|---|---|
-| `01-eda.Rmd` | Carga y limpieza de los datos, partición estratificada 80/20 y análisis exploratorio univariado y bivariado del conjunto de entrenamiento (distribuciones, tasas de abandono, V de Cramér, correlaciones) | `train_test_split.rds` |
-| `02-preprocesamiento.Rmd` | Imputación, colapso de categorías redundantes, variable `AvgChargePerMonth`, codificación One-Hot, estandarización y modelo base de regresión logística | `X_train_processed.csv`, `X_test_processed.csv`, `y_train.csv`, `y_test.csv` |
-| `03-modelado-avanzado.Rmd` | Comparación de las 112 configuraciones con validación cruzada anidada, pruebas de Friedman/Nemenyi y DeLong con tamaños del efecto (δ de Cliff), calibración Platt e isotónica, Successive Halving, optimizaciones computacionales con aceleración medida, evaluación en test e interpretabilidad con SHAP y LIME | — |
-| `04-codigo-experimento.Rmd` | Código del entrenamiento de las 112 configuraciones (apéndice, no se ejecuta al construir el libro) | `resultados_modelado/` |
+| `01-correcciones.Rmd` | Observaciones del entregable anterior, criterios del modelo original y auditoría de fuga de información | — |
+| `02-eda.Rmd` | Carga y limpieza de los datos, partición estratificada 80/20 y análisis exploratorio univariado y bivariado del conjunto de entrenamiento (distribuciones, tasas de abandono, V de Cramér, correlaciones) | `train_test_split.rds` |
+| `03-preprocesamiento.Rmd` | Imputación, colapso de categorías redundantes, variable `AvgChargePerMonth`, codificación One-Hot, estandarización y modelo base de regresión logística | `X_train_processed.csv`, `X_test_processed.csv`, `y_train.csv`, `y_test.csv` |
+| `04-modelado-avanzado.Rmd` | Comparación de las 112 configuraciones con validación cruzada anidada, pruebas de Friedman/Nemenyi y DeLong con tamaños del efecto (δ de Cliff), calibración Platt e isotónica, Successive Halving, optimizaciones computacionales con aceleración medida, evaluación en test e interpretabilidad con SHAP y LIME | — |
+| `05-literatura.Rmd` a `11-reproducibilidad.Rmd` | Revisión de literatura, modelo propio RegionalMAPEM, validación estadística, evaluación ampliada, dashboard, conclusiones y reproducibilidad; leen las tablas versionadas de `experiments/` y `resultados_modelo_propio/` | — |
+| `12-codigo-experimento.Rmd` | Código del entrenamiento de las 112 configuraciones (apéndice, no se ejecuta al construir el libro) | `resultados_modelado/` |
 
 ### Resultados guardados {-}
 
@@ -107,7 +122,9 @@ Todos los resultados que usa el libro están versionados en `resultados_modelado
 | `analisis_final/` | Tablas derivadas: `unidades.csv` (tabla maestra de las 1,680 unidades), `resumen_112.csv`, trazas *anytime*, diversidad genética, pruebas estadísticas y muestras bootstrap, finalistas e interpretabilidad (atribuciones SHAP y explicaciones LIME) |
 | `complementarios/` | Calibración isotónica de las 560 unidades principales, Successive Halving dentro de la validación anidada y las mediciones de optimización computacional |
 
-El código de ese entrenamiento está en el apéndice (`04-codigo-experimento.Rmd`); el de los experimentos complementarios, en `R/complementos/` (cada módulo se carga con `source()` y se ejecuta con su función `ejecutar_*()`). Reejecutarlo todo desde cero toma varios días en un portátil, por eso el libro trabaja sobre los artefactos guardados.
+Los capítulos del modelo propio leen además `experiments/resultados/tablas/` (familia de 223 comparaciones, métricas por pliegue, robustez, calibración, SHAP y tabla maestra), `experiments/resultados/tablas_pre_holdout/` con su sello SHA-256, `experiments/literatura/` (registro de búsquedas) y `resultados_modelo_propio/` (salidas guardadas del piloto de RegionalMAPEM).
+
+El código de ese entrenamiento está en el apéndice (`12-codigo-experimento.Rmd`); el de los experimentos complementarios, en `R/complementos/` (cada módulo se carga con `source()` y se ejecuta con su función `ejecutar_*()`). Reejecutarlo todo desde cero toma varios días en un portátil, por eso el libro trabaja sobre los artefactos guardados.
 
 ---
 
@@ -135,9 +152,9 @@ Publicación: al actualizar la rama `main`, GitHub Actions instala R y los paque
 
 ## Recursos relacionados {-}
 
-- 📊 Dashboard interactivo (Plotly Dash): [Dash_Telco_Churn](https://github.com/Nataly-Cardenas/Dash_Telco_Churn)
-- 📄 Paper: [`paper/paper.pdf`](paper/paper.pdf)
-- 🗂️ Conjunto de datos: [Kaggle — Telco Customer Churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn)
+- Dashboard interactivo (Plotly Dash): [Dash_Telco_Churn_ML](https://github.com/lauraformore/Dash_Telco_Churn_ML)
+- Paper: [`paper/paper.pdf`](paper/paper.pdf)
+- Conjunto de datos: [Kaggle — Telco Customer Churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn)
 
 ---
 

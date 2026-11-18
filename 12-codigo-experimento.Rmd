@@ -1,3 +1,5 @@
+# (PART\*) Apéndices {-}
+
 # Apéndice: código del entrenamiento de las 112 configuraciones {#codigo-experimento -}
 
 Las tablas y figuras del modelado avanzado leen resultados ya calculados. Este apéndice

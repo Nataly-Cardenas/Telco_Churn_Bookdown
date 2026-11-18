@@ -5,7 +5,10 @@
 # gráficas y resultados que aparecen debajo de cada bloque los genera ese código.
 
 knitr::opts_chunk$set(eval = TRUE, echo = TRUE, comment = NA, message = FALSE, warning = FALSE,
-                      results = "hold", fig.show = "hold")
+                      results = "hold", fig.show = "hold",
+                      # Gráficas nítidas: se dibujan a 200 ppp y se muestran al ancho del texto.
+                      dev = "png", dpi = 200, out.width = "100%", fig.align = "center")
+if (capabilities("cairo")) knitr::opts_chunk$set(dev.args = list(type = "cairo"))
 
 local({
   apertura <- '\n\n<details class="code-fold"><summary>Show code cell source</summary>\n\n'
