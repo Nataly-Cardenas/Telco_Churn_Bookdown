@@ -681,7 +681,7 @@ tabla_perfil <- function(texto, filas = 15) {
                   `filename:lineno(function)` = str_remove(str_replace_all(m[, 7], stringr::fixed("\\"), "/"), "^.*?site-packages/")) |>
     head(filas)
   miles <- function(n) format(as.integer(n), big.mark = ".", decimal.mark = ",")
-  titulo <- sprintf("%s llamadas a funciones (%s primitivas) en %.3f s · ordenado por tiempo acumulado · primeras %d funciones",
+  titulo <- sprintf("%s llamadas a funciones (%s primitivas) en %.3f s, ordenado por tiempo acumulado, primeras %d funciones",
                     miles(resumen[2]), miles(coalesce(resumen[3], resumen[2])), as.numeric(resumen[4]), nrow(frame))
   frame |>
     mutate(across(where(is.double), ~ formatC(.x, format = "f", digits = 3))) |>
@@ -718,7 +718,7 @@ En cada ronda pasa el tercio con mejor F1 interno. El costo total equivale a 4 a
 
 El factor 3 es el valor que suele recomendarse para Hyperband: con 2 se necesitan muchas rondas y se descarta poco en cada una; con valores mayores, una sola evaluación muy ruidosa a baja fidelidad puede eliminar a un buen candidato.
 
-**Diseño de la comparación.** Para Random Forest, XGBoost y SVM con SMOTE se ejecutaron dos búsquedas en cada uno de los cinco folds externos de la realización principal: Successive Halving (`HalvingRandomSearchCV`) y una búsqueda aleatoria a fidelidad completa con 24 candidatos, el mismo presupuesto de la sección 1. Ambas usan el mismo Pipeline de la sección 1 (mismas semillas de modelo y de SMOTE), los mismos tres folds internos —reconstruidos y verificados contra su huella SHA-256— y el mismo objetivo, F1 de la clase abandono. También comparten la semilla del muestreo, de modo que los 24 candidatos de la búsqueda completa están entre los 27 que Successive Halving examina en su primera ronda: la comparación mide qué tan bien elige SH con información parcial dentro de prácticamente el mismo conjunto de candidatos. Los espacios son continuos o más amplios que los de la sección 1.5 porque, con el número de árboles como recurso, el espacio de Random Forest solo tenía 8 combinaciones restantes; por eso la referencia directa es la búsqueda completa de esta sección.
+**Diseño de la comparación.** Para Random Forest, XGBoost y SVM con SMOTE se ejecutaron dos búsquedas en cada uno de los cinco folds externos de la realización principal: Successive Halving (`HalvingRandomSearchCV`) y una búsqueda aleatoria a fidelidad completa con 24 candidatos, el mismo presupuesto de la sección 1. Ambas usan el mismo Pipeline de la sección 1 (mismas semillas de modelo y de SMOTE), los mismos tres folds internos (reconstruidos y verificados contra su huella SHA-256) y el mismo objetivo, F1 de la clase abandono. También comparten la semilla del muestreo, de modo que los 24 candidatos de la búsqueda completa están entre los 27 que Successive Halving examina en su primera ronda: la comparación mide qué tan bien elige SH con información parcial dentro de prácticamente el mismo conjunto de candidatos. Los espacios son continuos o más amplios que los de la sección 1.5 porque, con el número de árboles como recurso, el espacio de Random Forest solo tenía 8 combinaciones restantes; por eso la referencia directa es la búsqueda completa de esta sección.
 
 ```{r mod-091}
 # Successive Halving (R/complementos/multifidelidad.R) es costoso: por defecto se leen sus resultados.
@@ -761,7 +761,7 @@ tabla(MF_PARES |>
                   folds_sh_mejor = sum(delta_f1_externo > 0)))
 
 MULTIFIDELIDAD |>
-  mutate(serie = paste(NOMBRES[model], "·", if_else(method == "successive_halving", "SH", "Random completo"))) |>
+  mutate(serie = paste0(NOMBRES[model], " (", if_else(method == "successive_halving", "SH", "Random completo"), ")")) |>
   ggplot(aes(search_seconds, outer_f1, colour = serie, shape = method == "successive_halving")) +
   geom_point(size = 2.4, alpha = .8) +
   scale_x_log10() + scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 15), guide = "none") +
@@ -1030,7 +1030,7 @@ ggplot() +
   geom_point(data = etiquetas, aes(rank, 0), size = 0.8, colour = "#1c4f74") +
   geom_text(data = etiquetas, aes(end, y, label = sprintf("%s (%.1f)", name, rank), hjust = if_else(left, 1, 0)), size = 2.6) +
   coord_cartesian(xlim = c(-65, k + 65), ylim = c(-offset - half * 0.75 - 1, 5)) +
-  labs(title = "Diagrama de Diferencia Crítica · 112 configuraciones\nEXPLORATORIO: cinco folds dependientes de un solo dataset",
+  labs(title = "Diagrama de Diferencia Crítica: 112 configuraciones\nEXPLORATORIO: cinco folds dependientes de un solo dataset",
        caption = "Las barras agrupan ausencia de rechazo bajo la aproximación de Nemenyi. No prueban equivalencia ni superioridad confirmatoria.") +
   theme_void() +
   theme(plot.title = element_text(hjust = 0.5, size = 16), plot.caption = element_text(hjust = 0.5, size = 10))

@@ -1,7 +1,5 @@
 # Modelo propio: ponderación por regiones con MAP-EM {#modelo-propio -}
 
-**Proyecto Final – Tercer Entregable · Machine Learning · Telco Customer Churn**
-
 Este capítulo documenta el modelo original: la limitación que lo motiva, su formulación, la derivación de los pasos E y M, la propiedad teórica con su demostración, el pseudocódigo, la complejidad, la implementación propia, las pruebas unitarias y los pilotos exploratorios.
 
 ::: {.callout .callout-note}
@@ -44,7 +42,7 @@ historical_features <- function(X) {
   out$AvgChargePerMonth <- ifelse(out$tenure > 0, out$TotalCharges / out$tenure, out$MonthlyCharges)
   out
 }
-cat(sprintf("Desarrollo: %d clientes, %d variables · tasa de churn = %.3f · hold-out excluido: %d clientes\n",
+cat(sprintf("Desarrollo: %d clientes, %d variables, tasa de churn = %.3f, hold-out excluido: %d clientes\n",
             nrow(X), ncol(X), mean(y), length(test_ids)))
 ```
 

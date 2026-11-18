@@ -1,6 +1,6 @@
 {
  "nota": "Salidas impresas por las celdas del capítulo 5 del Jupyter Book (implementación en Python de RegionalMAPEM).",
- "tiempo_map_em": "pendiente log-log en n: 1.10 · en M: 0.70 (1 = lineal)",
- "convergencia": "convergió en todos los pliegues: True · ascenso monótono: True",
+ "tiempo_map_em": "pendiente log-log en n: 1.10 y en M: 0.70 (1 = lineal)",
+ "convergencia": "convergió en todos los pliegues: True y ascenso monótono: True",
  "heterogeneidad": "pliegues en los que el mejor experto cambia entre regiones: 5 de 5"
 }

@@ -131,7 +131,7 @@ dimensiones_originales <- dim(df)
 #### Primeras 5 filas {-}
 
 ```{r eda-010}
-tabla(head(df, 5), "Primeras cinco filas · verificación de lectura")
+tabla(head(df, 5), "Primeras cinco filas: verificación de lectura")
 ```
 
 Las primeras filas contienen un identificador de cliente, características personales y de los servicios, cargos y la etiqueta `Churn`. Aparecen tanto `Yes` como `No` en el objetivo y categorías como `No phone service`, distintas de una celda vacía. Esta vista sirve para reconocer el formato de los registros; no permite estimar la distribución del conjunto completo.
@@ -139,7 +139,7 @@ Las primeras filas contienen un identificador de cliente, características perso
 #### Últimas 5 filas {-}
 
 ```{r eda-013}
-tabla(tail(df, 5), "Últimas cinco filas · verificación de lectura")
+tabla(tail(df, 5), "Últimas cinco filas: verificación de lectura")
 ```
 
 Las últimas filas muestran registros con distintas antigüedades, cargos y modalidades de contrato, conservando las mismas columnas. También contienen ambas etiquetas de `Churn`. Son ejemplos de lectura del archivo, no una muestra que permita generalizar qué características predominan.
@@ -211,7 +211,7 @@ tc_convertida <- suppressWarnings(as.numeric(tc_original))
 no_convertibles <- !is.na(tc_original) & is.na(tc_convertida)
 tabla(tibble(`Texto original (repr)` = sprintf("'%s'", tc_original[no_convertibles])) |>
         count(`Texto original (repr)`, name = "Frecuencia", sort = TRUE),
-      "Textos no convertibles en TotalCharges · train")
+      "Textos no convertibles en TotalCharges (train)")
 ```
 
 Los 8 registros no convertibles contienen un espacio (`' '`) en lugar de un importe. Esto explica por qué la columna requiere una revisión de tipo: el espacio representa ausencia de información numérica, pero no permite concluir que el cargo sea cero.
@@ -230,7 +230,7 @@ glimpse(train_df)
 tabla(tibble(`#` = seq_along(train_df) - 1, Column = names(train_df),
              `Non-Null Count` = paste(colSums(!is.na(train_df)), "non-null"),
              Dtype = map_chr(train_df, ~ class(.x)[1])),
-      "train_df.info() · columnas, no nulos y tipo")
+      "train_df.info(): columnas, no nulos y tipo")
 ```
 
 #### Resumen {-}
@@ -241,7 +241,7 @@ tabla(tibble(Variable = names(train_df), `Tipo almacenado` = map_chr(train_df, ~
                                     names(train_df) %in% num_vars ~ "Numérica", TRUE ~ "Categórica"),
              `Únicos observados` = map_int(train_df, n_distinct, na.rm = TRUE),
              Nulos = colSums(is.na(train_df))),
-      "Esquema analítico · train")
+      "Esquema analítico (train)")
 ```
 
  `tenure`, `MonthlyCharges` y `TotalCharges` se clasifican como numéricas; los demás predictores son categóricos. `SeniorCitizen` está almacenada como entero, pero tiene 2 valores distintos y se analiza como categoría. `PaymentMethod` presenta 4 categorías, mientras que los demás predictores categóricos tienen 2 o 3. Solo `TotalCharges` registra nulos: 8. La distinción entre tipo almacenado y papel analítico será relevante al preparar los datos para los modelos.
@@ -267,7 +267,7 @@ conteo <- table(factor(train_df[[TARGET]], levels = c("No", "Yes")))
 porcentaje <- conteo / nrow(train_df) * 100
 target_resumen <- tibble(Churn = names(conteo), Clientes = as.integer(conteo),
                          `Porcentaje (%)` = as.numeric(porcentaje))
-tabla(target_resumen, "Distribución de Churn · train")
+tabla(target_resumen, "Distribución de Churn (train)")
 ```
 
 En train, 4139 clientes permanecen (`No`), equivalentes al 73.46%, y 1495 abandonan (`Yes`), que representan el 26.54%. La clase de abandono es minoritaria. Este desbalance hace necesario evaluar la detección de `Yes` por separado, porque una medida global puede quedar dominada por los clientes que permanecen.
@@ -275,7 +275,7 @@ En train, 4139 clientes permanecen (`No`), equivalentes al 73.46%, y 1495 abando
 ```{r eda-039}
 fig <- plot_ly(target_resumen, x = ~Churn, y = ~Clientes, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", textposition = "outside",
-               text = ~sprintf("%d · %.2f%%", Clientes, `Porcentaje (%)`)) |>
+               text = ~sprintf("%d (%.2f%%)", Clientes, `Porcentaje (%)`)) |>
   layout(yaxis = list(range = c(0, max(conteo) * 1.16)))
 mostrar(fig, "Clientes que permanecen y abandonan")
 ```
@@ -300,7 +300,7 @@ resumen_num <- map_dfr(num_vars, function(v) {
          Nulos = map_int(Variable, ~ sum(is.na(train_df[[.x]]))),
          `Nulos (%)` = Nulos / nrow(train_df) * 100,
          Asimetría = map_dbl(Variable, ~ asimetria(train_df[[.x]])))
-tabla(resumen_num, "Estadísticas numéricas completas · train")
+tabla(resumen_num, "Estadísticas numéricas completas (train)")
 ```
 
 `tenure` tiene 5634 observaciones válidas, con media de 32.49 meses y DS de 24.57 meses. La mediana es 29.00 meses y los valores van de 0.00 a 72.00 meses. El intervalo entre Q1 = 9.00 y Q3 = 55.00 abarca la mitad central de la distribución, con un IQR de 46.00 meses, lo que refleja una amplia diversidad de antigüedades. La media supera ligeramente a la mediana y la asimetría es 0.24. 
@@ -328,7 +328,7 @@ fig <- subplot(histograma, caja, widths = c(0.7, 0.3), titleX = TRUE, titleY = T
   layout(showlegend = FALSE,
          annotations = list(list(text = "Distribución", x = 0.35, y = 1.05, xref = "paper", yref = "paper", showarrow = FALSE),
                             list(text = "Rango y cuartiles", x = 0.85, y = 1.05, xref = "paper", yref = "paper", showarrow = FALSE)))
-mostrar(fig, paste(var, "· histograma y boxplot"))
+mostrar(fig, paste0(var, ": histograma y boxplot"))
 
 # ── MonthlyCharges ──
 
@@ -346,7 +346,7 @@ fig <- subplot(histograma, caja, widths = c(0.7, 0.3), titleX = TRUE, titleY = T
   layout(showlegend = FALSE,
          annotations = list(list(text = "Distribución", x = 0.35, y = 1.05, xref = "paper", yref = "paper", showarrow = FALSE),
                             list(text = "Rango y cuartiles", x = 0.85, y = 1.05, xref = "paper", yref = "paper", showarrow = FALSE)))
-mostrar(fig, paste(var, "· histograma y boxplot"))
+mostrar(fig, paste0(var, ": histograma y boxplot"))
 
 # ── TotalCharges ──
 
@@ -364,7 +364,7 @@ fig <- subplot(histograma, caja, widths = c(0.7, 0.3), titleX = TRUE, titleY = T
   layout(showlegend = FALSE,
          annotations = list(list(text = "Distribución", x = 0.35, y = 1.05, xref = "paper", yref = "paper", showarrow = FALSE),
                             list(text = "Rango y cuartiles", x = 0.85, y = 1.05, xref = "paper", yref = "paper", showarrow = FALSE)))
-mostrar(fig, paste(var, "· histograma y boxplot"))
+mostrar(fig, paste0(var, ": histograma y boxplot"))
 ```
 
 ### 3.3 Variables categóricas {-}
@@ -384,7 +384,7 @@ resumen_cat <- map_dfr(cat_vars, function(v) {
          `Valores con espacios externos` = sum(textos != str_trim(textos)),
          `Variantes potencialmente equivalentes` = n_distinct(textos) - n_distinct(normalizados))
 })
-tabla(resumen_cat, "Calidad y cardinalidad de categorías · train")
+tabla(resumen_cat, "Calidad y cardinalidad de categorías (train)")
 ```
 
 Los predictores categóricos tienen entre 2 y 4 categorías. Todos registran 0 nulos, 0 categorías bajo el umbral de rareza indicado y 0 casos detectados de espacios externos o variantes potencialmente equivalentes. `PaymentMethod` es la variable con más categorías. Estas comprobaciones no muestran necesidad de agrupar por escasez ni de corregir esos patrones de escritura, aunque no descartan otros problemas de significado.
@@ -397,14 +397,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── SeniorCitizen ──
 
@@ -413,14 +413,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── Partner ──
 
@@ -429,14 +429,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── Dependents ──
 
@@ -445,14 +445,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── PhoneService ──
 
@@ -461,14 +461,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── MultipleLines ──
 
@@ -477,14 +477,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── InternetService ──
 
@@ -493,14 +493,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── OnlineSecurity ──
 
@@ -509,14 +509,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── OnlineBackup ──
 
@@ -525,14 +525,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── DeviceProtection ──
 
@@ -541,14 +541,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── TechSupport ──
 
@@ -557,14 +557,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── StreamingTV ──
 
@@ -573,14 +573,14 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 fig <- plot_ly(f, x = ~Clientes, y = ~Categoría, type = "bar", orientation = "h",
                text = ~sprintf("%.2f%%", `Porcentaje (%)`), textposition = "outside",
                marker = list(color = COLOR_MAIN)) |>
   layout(yaxis = list(categoryorder = "array", categoryarray = rev(f$Categoría)),
          xaxis = list(range = c(0, max(f$Clientes) * 1.2)))
-mostrar(fig, paste(c, "· distribución"), altura = 300)
+mostrar(fig, paste0(c, ": distribución"), altura = 300)
 
 # ── StreamingMovies ──
 
@@ -589,7 +589,7 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 # ── Contract ──
 
@@ -598,7 +598,7 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 # ── PaperlessBilling ──
 
@@ -607,7 +607,7 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 
 # ── PaymentMethod ──
 
@@ -616,7 +616,7 @@ f <- train_df |>
   count(Categoría = as.character(.data[[c]]), name = "Clientes", sort = TRUE) |>
   mutate(`Porcentaje (%)` = Clientes / nrow(train_df) * 100,
          `Poco frecuente (<1%)` = `Porcentaje (%)` < 1)
-tabla(f, paste(c, "· frecuencias"))
+tabla(f, paste0(c, ": frecuencias"))
 ```
 
 #### Gráficos {-}
@@ -666,7 +666,7 @@ outliers <- map_dfr(num_vars, function(c) {
          `Límite superior` = superior, `Posibles outliers` = cantidad,
          `% observado` = 100 * cantidad / length(s), Asimetría = asimetria(s))
 })
-tabla(outliers, "Límites IQR y asimetría · train")
+tabla(outliers, "Límites IQR y asimetría (train)")
 ```
 
 Las tres variables presentan 0 posibles outliers según sus límites IQR globales. Para `tenure`, los límites son -60.00 y 124.00; para `MonthlyCharges`, -45.84 y 171.51; y para `TotalCharges`, -4,739.73 y 8,985.62. Los límites negativos son resultados de la regla estadística, no valores negativos observados. La ausencia de alertas con este criterio no demuestra que todos los registros sean correctos.
@@ -751,43 +751,43 @@ stopifnot("Revisar la pertinencia de Chi-cuadrado con las nuevas frecuencias." =
 
 c <- "tenure"
 d <- filter(descriptivos_clase, Variable == c)
-tabla(d, paste(c, "· resumen por Churn"))
+tabla(d, paste0(c, ": resumen por Churn"))
 
 fig <- plot_ly(train_df, x = ~.data[[TARGET]], y = ~.data[[c]], color = ~.data[[TARGET]],
                colors = TARGET_COLORS, type = "box", boxpoints = "outliers", quartilemethod = "linear") |>
   layout(xaxis = list(title = TARGET, categoryorder = "array", categoryarray = c("No", "Yes")),
          yaxis = list(title = c))
-mostrar(fig, paste(c, "· comparación por clase"))
+mostrar(fig, paste0(c, ": comparación por clase"))
 
-tabla(filter(pruebas_num, Variable == "tenure"), "tenure · prueba estadística", decimales = 4)
+tabla(filter(pruebas_num, Variable == "tenure"), "tenure: prueba estadística", decimales = 4)
 
 # ── MonthlyCharges según Churn ──
 
 c <- "MonthlyCharges"
 d <- filter(descriptivos_clase, Variable == c)
-tabla(d, paste(c, "· resumen por Churn"))
+tabla(d, paste0(c, ": resumen por Churn"))
 
 fig <- plot_ly(train_df, x = ~.data[[TARGET]], y = ~.data[[c]], color = ~.data[[TARGET]],
                colors = TARGET_COLORS, type = "box", boxpoints = "outliers", quartilemethod = "linear") |>
   layout(xaxis = list(title = TARGET, categoryorder = "array", categoryarray = c("No", "Yes")),
          yaxis = list(title = c))
-mostrar(fig, paste(c, "· comparación por clase"))
+mostrar(fig, paste0(c, ": comparación por clase"))
 
-tabla(filter(pruebas_num, Variable == "MonthlyCharges"), "MonthlyCharges · prueba estadística", decimales = 4)
+tabla(filter(pruebas_num, Variable == "MonthlyCharges"), "MonthlyCharges: prueba estadística", decimales = 4)
 
 # ── TotalCharges según Churn ──
 
 c <- "TotalCharges"
 d <- filter(descriptivos_clase, Variable == c)
-tabla(d, paste(c, "· resumen por Churn"))
+tabla(d, paste0(c, ": resumen por Churn"))
 
 fig <- plot_ly(train_df, x = ~.data[[TARGET]], y = ~.data[[c]], color = ~.data[[TARGET]],
                colors = TARGET_COLORS, type = "box", boxpoints = "outliers", quartilemethod = "linear") |>
   layout(xaxis = list(title = TARGET, categoryorder = "array", categoryarray = c("No", "Yes")),
          yaxis = list(title = c))
-mostrar(fig, paste(c, "· comparación por clase"))
+mostrar(fig, paste0(c, ": comparación por clase"))
 
-tabla(filter(pruebas_num, Variable == "TotalCharges"), "TotalCharges · prueba estadística", decimales = 4)
+tabla(filter(pruebas_num, Variable == "TotalCharges"), "TotalCharges: prueba estadística", decimales = 4)
 ```
 
 #### Asociación punto-biserial {-}
@@ -798,7 +798,7 @@ ranking_num <- pruebas_num |>
   select(Variable, `r punto-biserial`, N) |>
   mutate(`|r|` = abs(`r punto-biserial`)) |>
   arrange(desc(`|r|`))
-tabla(ranking_num, "Asociación numérica con Churn · mayor a menor |r|", decimales = 4)
+tabla(ranking_num, "Asociación numérica con Churn: mayor a menor |r|", decimales = 4)
 ```
 
 `tenure` muestra la mayor asociación numérica marginal con el objetivo, con r = -0.3456. `MonthlyCharges` tiene una relación positiva de 0.1980 y `TotalCharges`, una negativa de -0.1948, de magnitudes cercanas entre sí. Las dos primeras usan 5634 observaciones y la última, 5626. Los signos describen la dirección de la asociación con abandono; el orden por magnitud no sustituye una comparación predictiva con varias características a la vez.
@@ -832,18 +832,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── SeniorCitizen según Churn ──
 
@@ -858,18 +858,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── Partner según Churn ──
 
@@ -884,18 +884,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── Dependents según Churn ──
 
@@ -910,18 +910,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── PhoneService según Churn ──
 
@@ -936,18 +936,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── MultipleLines según Churn ──
 
@@ -962,18 +962,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── InternetService según Churn ──
 
@@ -988,18 +988,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── OnlineSecurity según Churn ──
 
@@ -1014,18 +1014,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── OnlineBackup según Churn ──
 
@@ -1040,18 +1040,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── DeviceProtection según Churn ──
 
@@ -1066,18 +1066,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── TechSupport según Churn ──
 
@@ -1092,18 +1092,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── StreamingTV según Churn ──
 
@@ -1118,18 +1118,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── StreamingMovies según Churn ──
 
@@ -1144,18 +1144,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── Contract según Churn ──
 
@@ -1170,18 +1170,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── PaperlessBilling según Churn ──
 
@@ -1196,18 +1196,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 
 # ── PaymentMethod según Churn ──
 
@@ -1222,18 +1222,18 @@ t <- as.data.frame(ct, stringsAsFactors = FALSE) |>
   arrange(Churn) |>
   select(Churn, variable, categoria, n, porcentaje)
 descriptivos_cat[[c]] <- t
-tabla(t, paste(c, "· distribución dentro de Churn"))
+tabla(t, paste0(c, ": distribución dentro de Churn"))
 
 fig <- plot_ly(t, x = ~n, y = ~categoria, color = ~Churn, colors = TARGET_COLORS,
                type = "bar", orientation = "h") |>
   layout(barmode = "group", xaxis = list(title = "Clientes (frecuencia absoluta)"),
          yaxis = list(title = "Categoría", automargin = TRUE))
-mostrar(fig, paste(c, "· frecuencias agrupadas por Churn"), altura = 380)
+mostrar(fig, paste0(c, ": frecuencias agrupadas por Churn"), altura = 380)
 
 r <- filter(pruebas_cat, Variable == c)
 chi_tabla <- r |>
   select(variable = Variable, `chi cuadrado` = `χ²`, `p-value` = p, gl, prueba = Prueba)
-tabla(chi_tabla, paste(c, "· Chi-cuadrado"), decimales = 4)
+tabla(chi_tabla, paste0(c, ": Chi-cuadrado"), decimales = 4)
 ```
 
 #### Control de comparaciones múltiples {-}
@@ -1327,7 +1327,7 @@ normalidad <- map_dfr(num_vars, function(c) {
 }) |>
   mutate(`p Holm` = holm(p),
          `¿Normal? (p Holm ≥ α)` = if_else(`p Holm` >= ALPHA, "Sí", "No"))
-tabla(normalidad, "Prueba de normalidad · predictores numéricos de train", decimales = 4)
+tabla(normalidad, "Prueba de normalidad: predictores numéricos de train", decimales = 4)
 
 todas_normales <- all(normalidad$`p Holm` >= ALPHA)
 metodo_corr <- if (todas_normales) "pearson" else "spearman"
@@ -1353,7 +1353,7 @@ paneles <- map(num_vars, function(c) {
 })
 fig <- subplot(paneles, nrows = 1, margin = 0.04, titleX = TRUE, titleY = TRUE) |>
   layout(yaxis = list(title = "Cuantiles observados"))
-mostrar(fig, "Gráficos Q-Q · la línea roja es la normal esperada", altura = 400)
+mostrar(fig, "Gráficos Q-Q: la línea roja es la normal esperada", altura = 400)
 ```
 
 Interpretación: ninguna de las tres variables pasa la prueba de normalidad (p Holm ≈ 0 en todas; el mayor es 3.86e-139). Los Q-Q lo confirman con desvíos sistemáticos de la línea roja, no marginales: `tenure` (asimetría 0.24, curtosis −1.39) y `MonthlyCharges` (−0.22, −1.26) tienen colas ligeras y más de una zona de concentración, y `TotalCharges` presenta asimetría positiva (0.95). Como no se cumple el supuesto para Pearson, la matriz usa Spearman, que trabaja con rangos, mide asociación monótona, no exige normalidad y es robusta a la asimetría y a los valores extremos; los empates de `tenure`, que es discreta, se manejan con rangos promedio. Pearson se conserva solo como referencia comparativa en la tabla de pares.
@@ -1365,7 +1365,7 @@ Se incluyen todas las variables numéricas de train. Cada par utiliza sus observ
 corr_pearson <- cor(train_df[num_vars], method = "pearson", use = "pairwise.complete.obs")   # referencia: se conserva el cálculo original
 corr_spearman <- cor(train_df[num_vars], method = "spearman", use = "pairwise.complete.obs")
 corr <- cor(train_df[num_vars], method = metodo_corr, use = "pairwise.complete.obs")          # coeficiente decidido por la prueba de normalidad
-tabla(as_tibble(corr, rownames = "Variable"), paste("Matriz de", nombre_corr, "· predictores numéricos"), decimales = 4)
+tabla(as_tibble(corr, rownames = "Variable"), paste0("Matriz de ", nombre_corr, ": predictores numéricos"), decimales = 4)
 ```
 
 La relación más alta entre variables distintas corresponde a `tenure` y `TotalCharges` (ρ = 0.8914). La de `MonthlyCharges` con `TotalCharges` es 0.6420, y la de `tenure` con `MonthlyCharges`, 0.2842. Todas son positivas: los cargos acumulados comparten información tanto con la antigüedad como con el cargo mensual. La matriz describe relaciones monótonas; no demuestra que una variable sea prescindible.
@@ -1378,7 +1378,7 @@ fig <- plot_ly(x = colnames(corr), y = rownames(corr), z = corr, type = "heatmap
                colorscale = list(c(0, COLOR_MAIN), c(0.5, "#F4F8FB"), c(1, "#E4572E")),
                text = formatC(corr, format = "f", digits = 3), texttemplate = "%{text}") |>
   layout(yaxis = list(autorange = "reversed"))
-mostrar(fig, paste("Correlación de", nombre_corr, "· numéricas"), altura = 420)
+mostrar(fig, paste0("Correlación de ", nombre_corr, ": numéricas"), altura = 420)
 ```
 
 Fuera de la diagonal, el color más intenso corresponde a `tenure` con `TotalCharges`, seguido de `MonthlyCharges` con `TotalCharges`. El cruce de `tenure` con `MonthlyCharges` es más claro. Los tonos muestran relaciones positivas de distinta intensidad; la diagonal representa cada variable consigo misma y no una asociación entre predictores distintos.
@@ -1421,7 +1421,7 @@ asociaciones_cat <- map_dfr(pares_cat, function(par) {
   bind_cols(tibble(`Variable A` = par[1], `Variable B` = par[2]), prueba_contingencia(ct))
 }) |>
   mutate(`p Holm` = holm(p))
-tabla(asociaciones_cat, "Pares categóricos seleccionados · train", decimales = 4)
+tabla(asociaciones_cat, "Pares categóricos seleccionados (train)", decimales = 4)
 ```
 
 `PhoneService` y `MultipleLines` alcanzan V de Cramer = 1.0000, indicando una dependencia muy fuerte entre esas categorías. `InternetService` también presenta asociaciones elevadas con `OnlineSecurity` (0.7252) y `TechSupport` (0.7232). Estos resultados aconsejan revisar la información compartida entre variables de servicios antes de interpretar sus efectos por separado.
@@ -1456,7 +1456,7 @@ fig <- plot_ly(train_df, type = "splom", color = ~.data[[TARGET]], colors = TARG
                dimensions = map(num_vars, ~ list(label = .x, values = train_df[[.x]])),
                diagonal = list(visible = FALSE), showupperhalf = FALSE,
                marker = list(size = 3, opacity = 0.2))
-mostrar(fig, "Matriz de dispersión · variables numéricas por Churn", altura = 650)
+mostrar(fig, "Matriz de dispersión: variables numéricas por Churn", altura = 650)
 ```
 
 Interpretación: La relación entre antigüedad y cargos acumulados forma una nube ascendente con una amplitud que cambia a lo largo del eje. Entre cargos mensuales y acumulados también aparece una tendencia positiva, pero con dispersión amplia. Los colores de las clases se superponen en las comparaciones por pares: las relaciones no son equivalencias exactas ni separan completamente el churn.
@@ -1473,7 +1473,7 @@ for (clase in c("No", "Yes")) {
 }
 fig <- layout(fig, xaxis = list(title = c), yaxis = list(title = "Densidad estimada"),
               legend = list(title = list(text = "Churn")))
-mostrar(fig, paste(c, "· densidad por clase"), altura = 380)
+mostrar(fig, paste0(c, ": densidad por clase"), altura = 380)
 ```
 
 Interpretación: Las curvas de cargos mensuales muestran una mayor concentración relativa de `No` en la zona de cargos bajos y de `Yes` en cargos medios y altos. Existe un amplio solapamiento y más de una zona de concentración; el suavizado no respalda asumir una forma normal simple. La altura representa densidad dentro de cada clase, no cantidad absoluta de clientes.
@@ -1490,7 +1490,7 @@ for (clase in c("No", "Yes")) {
 }
 fig <- layout(fig, xaxis = list(title = c), yaxis = list(title = "Densidad estimada"),
               legend = list(title = list(text = "Churn")))
-mostrar(fig, paste(c, "· densidad por clase"), altura = 380)
+mostrar(fig, paste0(c, ": densidad por clase"), altura = 380)
 ```
 
 Interpretación: Ambas curvas se concentran en cargos acumulados bajos y se prolongan hacia importes altos. La curva de `Yes` muestra una concentración más marcada cerca del extremo bajo, mientras que `No` está más extendida. El solapamiento impide separar perfectamente las clases. La densidad es una estimación suavizada; su forma cerca del límite no permite deducir importes negativos ni conteos de clientes.
@@ -1527,7 +1527,7 @@ faltantes <- tibble(Variable = names(vista_faltantes), Nulos = colSums(is.na(vis
   mutate(`Porcentaje (%)` = Nulos / nrow(train_df) * 100,
          `Alerta >30%` = `Porcentaje (%)` > 30,
          `Alerta >70%` = `Porcentaje (%)` > 70)
-tabla(faltantes, "Valores faltantes por columna · train")
+tabla(faltantes, "Valores faltantes por columna (train)")
 columnas_faltantes <- faltantes$Variable[faltantes$Nulos > 0]
 ```
 
@@ -1544,7 +1544,7 @@ fig <- plot_ly(x = columnas_faltantes, y = seq_len(nrow(patron)) - 1,
                zmin = 0, zmax = 1, colorscale = list(c(0, "#EAF1F6"), c(1, "#E4572E")),
                colorbar = list(title = "Ausente", tickvals = c(0, 1), ticktext = c("Observado", "Ausente"))) |>
   layout(xaxis = list(title = "Variable"), yaxis = list(title = "Posición ordenada en train", autorange = "reversed"))
-mostrar(fig, "Patrón de faltantes · train completo", altura = 330)
+mostrar(fig, "Patrón de faltantes (train completo)", altura = 330)
 ```
 
 Interpretación: Predomina casi por completo el color asociado a valores observados en `TotalCharges`. La franja correspondiente a ausencias es tan estrecha que no permite distinguir registros individuales a esta escala. La imagen muestra que la ausencia ocupa una parte visualmente pequeña del conjunto, pero no permite contarla con precisión ni interpretar el eje ordenado como tiempo.
@@ -1605,7 +1605,7 @@ if (min(dim(ct)) >= 2) {
 }
 pruebas_missing <- bind_rows(pruebas_missing) |>
   mutate(`p Holm` = holm(p))
-tabla(pruebas_missing, "Contrastes de ausencia · train", decimales = 4)
+tabla(pruebas_missing, "Contrastes de ausencia (train)", decimales = 4)
 ```
 
 Interpretación: Ambas comparaciones presentan frecuencias esperadas pequeñas, por lo que la inferencia reportada utiliza Fisher exacta y conserva χ² solo como descripción. Para `Churn`, p = 0.1196 y p Holm = 0.1196 no aportan evidencia suficiente de asociación con la ausencia; V = 0.0227 es pequeño. Esto no demuestra independencia ni que los faltantes sean completamente aleatorios.
@@ -1617,7 +1617,7 @@ Para `tenure = 0`, p = 3.99e-26 y p Holm = 7.98e-26 aportan evidencia de asociac
 ```{r eda-128}
 ranking_cat <- arrange(pruebas_cat, desc(`V de Cramer`))
 tabla(select(ranking_cat, Variable, `V de Cramer`, `p Holm`),
-      "Asociaciones categóricas · resumen ordenado", decimales = 4)
+      "Asociaciones categóricas: resumen ordenado", decimales = 4)
 top_cat <- ranking_cat |>
   slice_head(n = 3) |>
   with(paste(sprintf("%s (V=%.4f)", Variable, `V de Cramer`), collapse = ", "))
@@ -1676,7 +1676,7 @@ Síntesis de los resultados de train. Se distinguen hallazgos descriptivos, evid
 7. Los faltantes se limitan a 8 registros de `TotalCharges` (0.14%), todos con antigüedad cero. Fisher no aporta evidencia suficiente de relación de la ausencia con churn, pero sí con antigüedad cero. Esto cuestiona asumir MCAR y no identifica todo el mecanismo de ausencia; no se ha reportado una prueba global de MCAR ni imputado datos.
 
 8. La siguiente etapa deberá comparar el tratamiento de `TotalCharges`, codificar categorías, revisar escalas y redundancias, y evaluar una regresión logística inicial mediante validación interna de train. Las decisiones deberán justificarse por generalización y métricas apropiadas para churn, manteniendo el test fuera del diseño y la selección de alternativas.
-9. Limitación conceptual a documentar antes de modelar (no verificable solo con este código): según la documentación habitual de este dataset (IBM Telco Customer Churn), `Churn = Yes` significa que el cliente se fue *en el último mes* antes del corte. Si es así, `tenure` y `TotalCharges` de quienes abandonaron pueden estar "congelados" en el momento de la baja, mientras que en quienes permanecen esas mismas variables siguen acumulándose después del corte — los 8 registros con `TotalCharges` ausente y `tenure = 0` son consistentes con esto (todos son `Churn = No`, clientes recién dados de alta). Esto no es *data leakage* en sentido estricto, pero sí acota qué mide el score del modelo: clasificación dentro de un corte, no necesariamente predicción prospectiva de churn futuro. Se documenta con más detalle, junto con la disponibilidad temporal de cada variable, en la sección 2.1 del capítulo de preprocesamiento.
+9. Limitación conceptual a documentar antes de modelar (no verificable solo con este código): según la documentación habitual de este dataset (IBM Telco Customer Churn), `Churn = Yes` significa que el cliente se fue *en el último mes* antes del corte. Si es así, `tenure` y `TotalCharges` de quienes abandonaron pueden estar "congelados" en el momento de la baja, mientras que en quienes permanecen esas mismas variables siguen acumulándose después del corte: los 8 registros con `TotalCharges` ausente y `tenure = 0` son consistentes con esto (todos son `Churn = No`, clientes recién dados de alta). Esto no es *data leakage* en sentido estricto, pero sí acota qué mide el score del modelo: clasificación dentro de un corte, no necesariamente predicción prospectiva de churn futuro. Se documenta con más detalle, junto con la disponibilidad temporal de cada variable, en la sección 2.1 del capítulo de preprocesamiento.
 
 ```{r eda-134}
 saveRDS(list(X_train = X_train, X_test = X_test, y_train = y_train, y_test = y_test), "train_test_split.rds")

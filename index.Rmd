@@ -22,15 +22,16 @@ source("R/salidas.R")
 
 Laura S. Rivera Figueredo y Natalý A. Cárdenas Izaquita  
 Departamento de Matemáticas, Física y Ciencia de Datos, Universidad del Norte, Barranquilla, Colombia  
-`sriveral@uninorte.edu.co` · `nizaquita@uninorte.edu.co`
+`sriveral@uninorte.edu.co`  
+`nizaquita@uninorte.edu.co`
 
 ```{=html}
 <div class="tc-card-grid tc-cols-3">
 <div class="tc-card-item meta-card"><div class="tc-card-title">Asignatura</div><div class="tc-card-body">Visualización de Datos y Machine Learning</div></div>
 
-<div class="tc-card-item meta-card"><div class="tc-card-title">Conjunto de datos</div><div class="tc-card-body">Telco Customer Churn (IBM) · 7,043 clientes · 26.5 % de abandono</div></div>
+<div class="tc-card-item meta-card"><div class="tc-card-title">Conjunto de datos</div><div class="tc-card-body">Telco Customer Churn (IBM), 7,043 clientes y 26.5 % de abandono</div></div>
 
-<div class="tc-card-item meta-card"><div class="tc-card-title">Metodología</div><div class="tc-card-body">EDA · Modelado avanzado · Modelo original · Validación estadística</div></div>
+<div class="tc-card-item meta-card"><div class="tc-card-title">Metodología</div><div class="tc-card-body">EDA, modelado avanzado, modelo original y validación estadística</div></div>
 </div>
 ```
 
@@ -142,6 +143,7 @@ El identificador no representa una característica explicativa. Los demás campo
 
 ## Referencias {-}
 
+::: {.tc-referencias}
 - Bergstra, J., Bardenet, R., Bengio, Y. y Kégl, B. (2011). Algorithms for hyper-parameter optimization. En *Advances in Neural Information Processing Systems*, 24.
 - Bergstra, J. y Bengio, Y. (2012). Random search for hyper-parameter optimization. *Journal of Machine Learning Research*, 13, 281–305.
 - Breiman, L. (2001). Random forests. *Machine Learning*, 45(1), 5–32.
@@ -161,6 +163,7 @@ El identificador no representa una característica explicativa. Los demás campo
 - Ribeiro, M. T., Singh, S. y Guestrin, C. (2016). "Why should I trust you?": Explaining the predictions of any classifier. En *Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining* (pp. 1135–1144).
 - Tukey, J. W. (1977). *Exploratory Data Analysis*. Addison-Wesley.
 - Varma, S. y Simon, R. (2006). Bias in error estimation when using cross-validation for model selection. *BMC Bioinformatics*, 7, 91.
+:::
 
 
 ## Estructura del libro {-}

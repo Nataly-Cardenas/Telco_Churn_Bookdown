@@ -502,7 +502,7 @@ cal <- RESUMEN[RESUMEN$conjunto == "telco", ]
 g$ll_cal <- cal$log_loss_media[match(g$modelo, cal$modelo)]; g$ece_cal <- cal$ece_media[match(g$modelo, cal$modelo)]
 g <- g[order(g$log_loss), ]
 propio <- cal[cal$modelo == "RegionalMAPEM", ]
-tabla(data.frame(Modelo = nombre(g$modelo), `Combinación del entregable anterior` = gsub("__", " · ", g$combinacion, fixed = TRUE),
+tabla(data.frame(Modelo = nombre(g$modelo), `Combinación del entregable anterior` = gsub("__", ", ", g$combinacion, fixed = TRUE),
                  `Log-loss` = g$log_loss, F1 = g$f1, AUC = g$auc, ECE = g$ece,
                  `Log-loss de la versión calibrada` = g$ll_cal, `ECE de la versión calibrada` = g$ece_cal, check.names = FALSE),
       "Tabla 7.16. Combinaciones del dashboard frente a las versiones reajustadas y calibradas (Telco, 25 pliegues)", decimales = 4, buscar = FALSE,

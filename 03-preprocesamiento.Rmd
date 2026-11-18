@@ -36,7 +36,7 @@ Antes de dividir los datos conviene dejar explícito cuándo estaría disponible
 
 Punto importante (no es *leakage* en sentido estricto, pero sí una limitación de alcance). Según la documentación habitual de este dataset (IBM Telco Customer Churn), `Churn = Yes` significa que el cliente se fue en el último mes antes del corte. Si es así, para los clientes que sí abandonaron, `tenure` y `TotalCharges` pueden quedar "congelados" en el momento de la baja, mientras que para los que permanecen esas mismas variables siguen acumulándose después del corte. Los 8 registros con `TotalCharges` nulo y `tenure = 0` (ver sección 6 del EDA) son consistentes con esto: todos son `Churn = No`, es decir, clientes recién dados de alta que aún no pudieron irse.
 
-En consecuencia, lo que este modelo mide es distinguir churners de no-churners dentro de un mismo corte, no una predicción prospectiva sobre clientes activos hoy. Ambas lecturas son legítimas, pero deben nombrarse: si el objetivo de negocio es "predecir quién se va a ir el próximo mes", este pipeline es un buen punto de partida, no el modelo final — un uso prospectivo real necesitaría variables medidas *antes* del posible corte de cada cliente, no en el mismo corte.
+En consecuencia, lo que este modelo mide es distinguir churners de no-churners dentro de un mismo corte, no una predicción prospectiva sobre clientes activos hoy. Ambas lecturas son legítimas, pero deben nombrarse: si el objetivo de negocio es "predecir quién se va a ir el próximo mes", este pipeline es un buen punto de partida, no el modelo final: un uso prospectivo real necesitaría variables medidas *antes* del posible corte de cada cliente, no en el mismo corte.
 
 ## 3. División train / test {-}
 
@@ -63,7 +63,7 @@ cat(sprintf("Train: %d Clientes, Test: %d Clientes\n", nrow(X_train), nrow(X_tes
    - Variables nominales (más de 2 categorías, incluyendo binarias tipo Yes/No): One-Hot Encoding (OHE).
 5. Escalado de variables numéricas: `tenure`, `MonthlyCharges`, `TotalCharges` y `AvgChargePerMonth` se estandarizan con `StandardScaler`.
 
-El escalado (`StandardScaler`) y la codificación (`OneHotEncoder`) aprenden sus parámetros únicamente de `train` y luego se aplican a `test`. La imputación de `TotalCharges` es distinta: no es un parámetro aprendido, es la constante fija 0, justificada por el contexto (`tenure = 0`) y aplicada igual a ambos conjuntos — ver sección 4.2 para la verificación explícita de esa condición. Ninguna de las dos formas de tratamiento usa información de `test` para decidirse, así que no hay *data leakage*.
+El escalado (`StandardScaler`) y la codificación (`OneHotEncoder`) aprenden sus parámetros únicamente de `train` y luego se aplican a `test`. La imputación de `TotalCharges` es distinta: no es un parámetro aprendido, es la constante fija 0, justificada por el contexto (`tenure = 0`) y aplicada igual a ambos conjuntos; ver sección 4.2 para la verificación explícita de esa condición. Ninguna de las dos formas de tratamiento usa información de `test` para decidirse, así que no hay *data leakage*.
 
 ### 4.1 Manejo del target {-}
 
@@ -162,8 +162,8 @@ dif <- auc_cv_alt - auc_cv_0
 sd_pob <- function(x) sqrt(mean((x - mean(x))^2))   # desviación poblacional, como numpy.std()
 
 cat(sprintf("Mediana de TotalCharges en train (informativa; en cada fold el imputador aprende la suya): %.2f\n", median(X_train_alt$TotalCharges, na.rm = TRUE)))
-cat(sprintf("CV AUC-ROC · imputación con 0 (actual, sin AvgChargePerMonth aún):     %.4f ± %.4f\n", mean(auc_cv_0), sd_pob(auc_cv_0)))
-cat(sprintf("CV AUC-ROC · mediana + indicador (alternativa, sin AvgChargePerMonth): %.4f ± %.4f\n", mean(auc_cv_alt), sd_pob(auc_cv_alt)))
+cat(sprintf("CV AUC-ROC: imputación con 0 (actual, sin AvgChargePerMonth aún):     %.4f ± %.4f\n", mean(auc_cv_0), sd_pob(auc_cv_0)))
+cat(sprintf("CV AUC-ROC: mediana + indicador (alternativa, sin AvgChargePerMonth): %.4f ± %.4f\n", mean(auc_cv_alt), sd_pob(auc_cv_alt)))
 cat(sprintf("Diferencia pareada por fold (alternativa − 0): %+.4f ± %.4f\n", mean(dif), sd_pob(dif)))
 ```
 
@@ -178,7 +178,7 @@ a) Colapsar categorías redundantes. El EDA confirmó (sección de consistencia,
 ```{r pre-018}
 # Colapsar categorías redundantes detectadas en el EDA:
 # "No internet service" y "No phone service" ya están implícitas en
-# InternetService y PhoneService respectivamente — mantenerlas duplica esa información
+# InternetService y PhoneService respectivamente; mantenerlas duplica esa información
 cols_no_internet <- c("OnlineSecurity", "OnlineBackup", "DeviceProtection",
                       "TechSupport", "StreamingTV", "StreamingMovies")
 X_train <- mutate(X_train, across(all_of(cols_no_internet), ~ replace(.x, .x == "No internet service", "No")))
@@ -531,7 +531,7 @@ cat("\nCoeficientes específicos de gender y PhoneService (con su puesto):\n")
 print(as.data.frame(filter(ranking, str_detect(variable, "gender|PhoneService"))), row.names = FALSE)
 ```
 
-> Corrección respecto a la lectura inicial. Para `gender` (coeficiente 0.032, puesto 21 de 24) la conclusión del EDA se sostiene: aporta muy poco a este modelo. Para `PhoneService` no se sostiene igual de bien: su coeficiente (−0.281) lo ubica en el puesto 15 de 24, por encima —en magnitud— de `Dependents` (−0.229), `SeniorCitizen` (0.154), `Partner` (0.018) y otras variables que sí se consideran informativas. No es de los coeficientes más grandes, pero tampoco es de los más pequeños.
+> Corrección respecto a la lectura inicial. Para `gender` (coeficiente 0.032, puesto 21 de 24) la conclusión del EDA se sostiene: aporta muy poco a este modelo. Para `PhoneService` no se sostiene igual de bien: su coeficiente (−0.281) lo ubica en el puesto 15 de 24, por encima, en magnitud, de `Dependents` (−0.229), `SeniorCitizen` (0.154), `Partner` (0.018) y otras variables que sí se consideran informativas. No es de los coeficientes más grandes, pero tampoco es de los más pequeños.
 >
 > Una parte de esa magnitud es probablemente un artefacto de colinealidad, no de aporte real: `PhoneService_Yes` (−0.281) y `MultipleLines_Yes` (+0.297) tienen coeficientes de signo opuesto y magnitud similar, consistente con que ambas codifican información muy relacionada (sin `PhoneService` no puede haber `MultipleLines`). Con regularización L2 y variables correlacionadas, el modelo puede repartir peso entre ellas de forma inestable. El propio capítulo ya advierte esto en la sección 4.3.c, pero la lectura inicial no lo aplicó de forma consistente a `PhoneService`.
 >

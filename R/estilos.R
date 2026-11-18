@@ -1385,6 +1385,47 @@ main pre code {
 }
 
 
+/* ---------- Referencias: una entrada separada de la siguiente ---------- */
+
+#refs.references {
+
+  margin-top: 1rem;
+}
+
+
+#refs .csl-entry {
+
+  margin: 0 0 1.1rem;
+
+  padding-left: 2em;
+
+  text-indent: -2em;
+
+  line-height: 1.6;
+}
+
+
+.tc-referencias ul,
+.tc-referencias ol {
+
+  padding-left: 2em;
+}
+
+
+.tc-referencias li {
+
+  margin-bottom: 0.9rem;
+
+  line-height: 1.6;
+}
+
+
+.tc-referencias li::marker {
+
+  color: var(--jb-heading);
+}
+
+
 /* ---------- Proposiciones y algoritmos (capítulo del modelo propio) ---------- */
 
 .tc-prf {

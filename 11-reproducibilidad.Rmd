@@ -45,7 +45,7 @@ papeles distintos, y cualquiera se puede recalcular.
 # Derivación de semillas: seed_for(papel, *coordenadas) = SeedSequence([42, código del papel, *coordenadas])
 # Implementación en R del algoritmo SeedSequence de numpy (aritmética de 32 bits sin signo).
 M32 <- 2^32
-mult32 <- function(a, b) {                     # (a · b) mod 2^32 sin perder precisión
+mult32 <- function(a, b) {                     # (a × b) mod 2^32 sin perder precisión
   b_alto <- b %/% 65536; b_bajo <- b %% 65536
   (((a * b_alto) %% 65536) * 65536 + a * b_bajo) %% M32
 }
